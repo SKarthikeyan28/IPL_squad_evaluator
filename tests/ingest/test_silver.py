@@ -12,7 +12,13 @@ import pytest
 
 from cricket_value.ingest.manifest import ArchiveRecord, FileRecord, Manifest
 from cricket_value.ingest.schemas import SILVER_TABLES
-from cricket_value.ingest.silver import build_registers, build_silver
+from cricket_value.ingest.silver import (
+    build_match_index,
+    build_registers,
+    build_season,
+    build_silver,
+    write_match_index,
+)
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "cricsheet"
 COMPETITIONS = {"cricsheet_ipl": "ipl", "cricsheet_t20i_male": "t20i"}
@@ -174,7 +180,7 @@ def test_unparseable_file_is_recorded_and_does_not_stop_the_build(
     assert "9.0.0" in result.failures[0].reason
     assert "1082591" not in set(read(out, "matches")["match_id"])
     assert result.row_counts["matches"] == 14
-    failures = pd.read_parquet(out / "_parse_failures.parquet")
+    failures = pd.read_parquet(out / "_parse_failures")
     assert failures["member"].tolist() == ["1082591.json"]
 
 
@@ -266,12 +272,12 @@ def test_contract_errors_quarantine_the_match_and_are_logged(raw: Path, tmp_path
     assert result.quarantined_matches == 1
     for table in SILVER_TABLES:
         assert "1082591" not in set(read(out, table)["match_id"]), table
-    q = pd.read_parquet(out / "_quarantine" / "matches.parquet")
+    q = pd.read_parquet(out / "_quarantine" / "matches")
     assert q["match_id"].tolist() == ["1082591"]
     assert q["quarantine_rules"].item() == "matches.toss_winner_is_a_team"
-    assert len(pd.read_parquet(out / "_quarantine" / "deliveries.parquet")) == 248
+    assert len(pd.read_parquet(out / "_quarantine" / "deliveries")) == 248
 
-    violations = pd.read_parquet(out / "_violations.parquet")
+    violations = pd.read_parquet(out / "_violations")
     errors = violations[violations["severity"] == "error"]
     assert set(zip(errors["match_id"], errors["rule"], strict=True)) == {
         ("1082591", "toss_winner_is_a_team")
@@ -281,3 +287,50 @@ def test_contract_errors_quarantine_the_match_and_are_logged(raw: Path, tmp_path
     assert ("1452625", "starting_xi_has_11") in set(
         zip(warn["match_id"], warn["rule"], strict=True)
     )
+
+
+def test_rebuilding_one_season_leaves_other_seasons_untouched(raw: Path, tmp_path: Path) -> None:
+    out = tmp_path / "silver"
+    build(raw, out)
+    before = {p: p.read_bytes() for p in out.rglob("season=*/part-0.parquet")}
+
+    doc = json.loads((FIXTURES / "ipl" / "1082591.json").read_text())
+    doc["info"]["city"] = "Hyderabad (corrected)"
+    stage_archive(
+        raw,
+        "cricsheet_ipl",
+        {**fixture_members("cricsheet_ipl"), "1082591.json": json.dumps(doc).encode()},
+        "2026-10-27T07:00:00Z",
+    )
+    manifest = Manifest(raw / "manifest")
+    index, failures = build_match_index(raw, manifest, COMPETITIONS)
+    write_match_index(out, index, failures)
+    build_season(raw, index, 2017, out)
+
+    changed = {p for p, data in before.items() if p.read_bytes() != data}
+    assert changed  # 2017 was rewritten with the corrected match
+    assert {p.relative_to(out).parts[-2] for p in changed} == {"season=2017"}
+    row = read(out, "matches").query("match_id == '1082591'")
+    assert row["city"].item() == "Hyderabad (corrected)"
+
+
+def test_season_without_matches_writes_empty_partitions(raw: Path, tmp_path: Path) -> None:
+    out = tmp_path / "silver"
+    index, _ = build_match_index(raw, Manifest(raw / "manifest"), COMPETITIONS)
+
+    result = build_season(raw, index, 2027, out)
+
+    assert result.row_counts == dict.fromkeys(SILVER_TABLES, 0)
+    for table in SILVER_TABLES:
+        part = out / table / "season=2027" / "part-0.parquet"
+        assert pq.read_metadata(part).num_rows == 0
+
+
+def test_index_maps_each_file_to_its_season(raw: Path) -> None:
+    index, failures = build_match_index(raw, Manifest(raw / "manifest"), COMPETITIONS)
+
+    assert failures == []
+    assert len(index) == 15
+    season_of = dict(zip(index["match_id"], index["season"], strict=True))
+    assert season_of["335982"] == 2008  # labelled "2007/08" by Cricsheet
+    assert season_of["1115800"] == 2018  # labelled "2017/18"

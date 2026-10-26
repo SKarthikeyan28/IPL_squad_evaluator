@@ -1,4 +1,4 @@
-.PHONY: install ingest verify silver quality-report test lint typecheck check
+.PHONY: install ingest verify silver quality-report dagster test lint typecheck check
 
 install:
 	uv sync
@@ -14,6 +14,11 @@ silver:
 
 quality-report:
 	uv run python -m cricket_value.quality.report
+
+# Dagster UI on http://localhost:3000. Run history is kept in .dagster/ (git-ignored).
+dagster:
+	mkdir -p .dagster && touch .dagster/dagster.yaml
+	DAGSTER_HOME=$(CURDIR)/.dagster uv run dagster dev -m cricket_value.orchestration.definitions
 
 test:
 	uv run pytest

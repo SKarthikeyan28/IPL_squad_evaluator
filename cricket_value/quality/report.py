@@ -18,9 +18,9 @@ def season_summary(silver: Path) -> pd.DataFrame:
     deliveries kept, and error / warning counts from the violations log."""
     matches = pd.read_parquet(silver / "matches", columns=["match_id", "competition", "season"])
     matches["season"] = matches["season"].astype("int64")
-    quarantined = pd.read_parquet(silver / "_quarantine" / "matches.parquet")
+    quarantined = pd.read_parquet(silver / "_quarantine" / "matches")
     deliveries = pd.read_parquet(silver / "deliveries", columns=["match_id"])
-    violations = pd.read_parquet(silver / "_violations.parquet")
+    violations = pd.read_parquet(silver / "_violations")
 
     all_matches = pd.concat([matches, quarantined[["match_id", "competition", "season"]]])
     competition_of = all_matches.set_index("match_id")["competition"]
@@ -41,9 +41,20 @@ def season_summary(silver: Path) -> pd.DataFrame:
 
 def render_markdown(silver: Path, snapshot_id: str) -> str:
     summary = season_summary(silver)
-    violations = pd.read_parquet(silver / "_violations.parquet")
-    failures = pd.read_parquet(silver / "_parse_failures.parquet")
-    quarantined = pd.read_parquet(silver / "_quarantine" / "matches.parquet")
+    # explicit order, so the report never depends on how files happen to be laid out
+    violations = pd.read_parquet(silver / "_violations")
+    violations["season"] = violations["season"].astype("int64")
+    violations = violations.sort_values(
+        ["severity", "season", "match_id", "table", "rule", "failure_case"], ignore_index=True
+    )
+    failures = pd.concat(
+        [
+            pd.read_parquet(silver / "_index_failures"),
+            pd.read_parquet(silver / "_parse_failures").drop(columns="season"),
+        ],
+        ignore_index=True,
+    )
+    quarantined = pd.read_parquet(silver / "_quarantine" / "matches")
 
     lines = [
         "# Data quality report",

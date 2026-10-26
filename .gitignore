@@ -14,5 +14,6 @@ data/raw/*
 !data/raw/.gitkeep
 
 # Tools
+.dagster/
 .DS_Store
 .env

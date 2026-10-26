@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+import numpy as np
 import pandas as pd
 
 from cricket_value.quality.contracts import VIOLATION_COLUMNS, empty_violations
@@ -56,6 +57,12 @@ def _flags(rule: str, df: pd.DataFrame, failure_case: pd.Series) -> pd.DataFrame
     )
 
 
+def _limit(is_super_over: pd.Series, *, super_over: int, regular: int) -> pd.Series:
+    """Per-innings limit. Built with numpy so the result stays integer even when empty."""
+    values = np.where(is_super_over.astype(bool).to_numpy(), super_over, regular)
+    return pd.Series(values, index=is_super_over.index, dtype="int64")
+
+
 def _innings_with_runs(tables: Tables) -> pd.DataFrame:
     runs = (
         tables["deliveries"]
@@ -81,7 +88,7 @@ def _at_most_10_dismissals(wickets: pd.DataFrame, innings: pd.DataFrame) -> pd.D
     out = wickets[~wickets["kind"].isin(NOT_OUT_KINDS)]
     n = out.groupby(["match_id", "innings_number"]).size().rename("dismissals").reset_index()
     n = n.merge(innings[["match_id", "season", "innings_number", "is_super_over"]])
-    limit = n["is_super_over"].map({True: 2, False: 10})
+    limit = _limit(n["is_super_over"], super_over=2, regular=10)
     bad = n[n["dismissals"] > limit]
     return _flags(
         "at_most_10_dismissals",
@@ -96,7 +103,7 @@ def _legal_balls_within_limit(deliveries: pd.DataFrame, innings: pd.DataFrame) -
     n = n.merge(
         innings[["match_id", "season", "innings_number", "is_super_over", "has_miscounted_overs"]]
     )
-    limit = n["is_super_over"].map({True: 6, False: 120})
+    limit = _limit(n["is_super_over"], super_over=6, regular=120)
     # Cricsheet flags innings where the umpires miscounted an over; extra balls are real there
     bad = n[(n["legal_balls"] > limit) & ~n["has_miscounted_overs"].astype(bool)]
     return _flags(

@@ -66,6 +66,18 @@ Settled in a design review on 2026-10-26. These decisions refine [Project_brief.
 - **Gold:** dbt reads silver as external sources and builds marts into a single `warehouse.duckdb` file.
 - **API access:** the API opens `warehouse.duckdb` read-only.
 - **Partitions:** only bronze and silver are Dagster assets partitioned by season. Gold marts and ratings are **not** partitioned; they are rebuilt in full by one dbt build through `dagster-dbt`.
+- **Season builds:** silver is built in two steps.
+  - A **match index** maps the latest version of each match file to its season, read from the file's date.
+  - **`build_season`** then parses, checks and writes one season without reading any other.
+  - `make silver` loops over the seasons, and Dagster runs one partition or a range, so both use the same code.
+  - Quarantine, violations and parse failures are season-partitioned too. A season with no matches writes empty files, so stale rows can't survive.
+- **Dagster:**
+  - **Assets:** `raw/<source>` (4) → `silver/match_index` → `silver/<table>` (6 tables in one multi-asset, partitioned by season) and `silver/players` and `silver/player_name_variants` → `reports/data_quality`.
+  - **Partitions:** yearly time-window partitions from 2005, which add each new year automatically.
+  - **Backfills:** single-run backfill policy, so a full 22-season rebuild is **one run** (~7 s) and needs no daemon.
+  - **Checks:** a `contracts` check on each silver table and a `reconciliation` check on `silver/matches`, both WARN severity. Quarantine already protects the data, so a failed check means "look at this", not "the pipeline broke".
+  - **Schedule:** a weekly ingest schedule, off by default.
+  - **Assets hold no logic:** they call the same functions as the `make` targets.
 - **Rebuild check:** `make rebuild` is verified by **row count plus a content hash of each table's sorted rows**, not by file bytes.
 
 ## 4. Data quality
