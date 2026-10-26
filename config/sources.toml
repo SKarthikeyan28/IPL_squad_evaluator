@@ -1,0 +1,28 @@
+# Raw data sources. Every downloaded file is stored unchanged under data/raw/<name>/
+# and recorded in the manifest with its checksum, URL and fetch time.
+#
+# kind = "zip"  -> archive of per-match JSON files; each member is checksummed in the manifest
+# kind = "file" -> a single file stored as received
+#
+# Cricsheet data is licensed ODC-BY (https://cricsheet.org/register/ and https://cricsheet.org/downloads/).
+# cricsheet.org/robots.txt allows /downloads/ and /register/ (checked 2026-10-26).
+
+[[source]]
+name = "cricsheet_ipl"
+url = "https://cricsheet.org/downloads/ipl_json.zip"
+kind = "zip"
+
+[[source]]
+name = "cricsheet_t20i_male"
+url = "https://cricsheet.org/downloads/t20s_male_json.zip"
+kind = "zip"
+
+[[source]]
+name = "cricsheet_people"
+url = "https://cricsheet.org/register/people.csv"
+kind = "file"
+
+[[source]]
+name = "cricsheet_names"
+url = "https://cricsheet.org/register/names.csv"
+kind = "file"
