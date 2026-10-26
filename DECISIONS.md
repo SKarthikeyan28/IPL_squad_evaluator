@@ -1,0 +1,198 @@
+# Design Decisions
+
+Settled in a design review on 2026-10-26. These decisions refine [Project_brief.md](Project_brief.md); where the two disagree, this file wins. The reasoning behind them, for interviews, is in [interview_prep.md](interview_prep.md).
+
+## Contents
+
+1. [Scope and schedule](#1-scope-and-schedule)
+2. [Raw layer and ingestion](#2-raw-layer-and-ingestion)
+3. [Storage, partitioning and reproducibility](#3-storage-partitioning-and-reproducibility)
+4. [Data quality](#4-data-quality)
+5. [Reference data: teams, venues, home games, season rules](#5-reference-data)
+6. [Player attributes](#6-player-attributes)
+7. [Point-in-time ratings](#7-point-in-time-ratings)
+8. [Win model](#8-win-model)
+9. [Player value and swap simulator](#9-player-value-and-swap-simulator)
+10. [Auction data, price model, optimiser and backtest](#10-auction-data-price-model-optimiser-and-backtest)
+11. [API and frontend](#11-api-and-frontend)
+12. [CI and experiment tracking](#12-ci-and-experiment-tracking)
+
+---
+
+## 1. Scope and schedule
+
+- **By Sun 1 Nov 2026:**
+  - All of Phase 1.
+  - The dbt star schema.
+  - `player_ratings_asof` split by over phase (not yet by pace/spin), with empirical Bayes shrinkage and the point-in-time test passing.
+- **Week 2, before Phase 3 starts:** the attribute pipeline, SCD2 `dim_player`, and pace/spin rating splits.
+- **Daily plan for week 1:**
+  - Mon–Tue: ingest and parse.
+  - Wed: contracts, quarantine and reconciliation.
+  - Thu: Dagster and Elo.
+  - Fri–Sat: dbt marts and ratings.
+  - Sun: point-in-time test and data quality report.
+- **Minimum project:** Phase 3. Phases 4–5 are stretch goals.
+- **README:** written as each phase is finished, so the repo can be shown at any phase boundary.
+- **Frontend:** no work on it before Phase 4.
+
+## 2. Raw layer and ingestion
+
+- **Zips:** each Cricsheet zip is stored as `data/raw/cricsheet/{archive}/{fetched_at}.zip`, but only when its SHA-256 differs from the last download.
+- **Manifest:** one row per JSON file inside the zip, with `match_id`, `sha256`, `source_zip` and `first_seen_at`.
+- **Parsing:** only files whose hash hasn't been seen before are parsed.
+- **Corrections:** a corrected match becomes a new version. Silver keeps the latest version of each `match_id`, and the manifest keeps the full history.
+- **Parser:** builds pandas DataFrames, then writes Parquet through pyarrow. Each Cricsheet schema version is handled explicitly.
+- **Canonical season:** the year of a match's first date, not Cricsheet's `info.season` label. Cricsheet labels IPL 2008 as `"2007/08"`, 2010 as `"2009/10"` and 2020 as `"2020/21"`. The original label is kept as `season_label`.
+- **Conditional requests:** the downloader sends `If-Modified-Since` using the stored `Last-Modified` value, so an unchanged source costs one 304 response. A body whose SHA-256 is already stored is also skipped.
+- **T20Is:** men's only, from 2005, and only matches where both sides are Full Members. This is one config switch. Opponent-strength adjustment goes in the write-up as future work.
+
+## 3. Storage, partitioning and reproducibility
+
+- **Silver:** written by Python as hive-partitioned Parquet (`season=YYYY/`).
+- **Gold:** dbt reads silver as external sources and builds marts into a single `warehouse.duckdb` file.
+- **API access:** the API opens `warehouse.duckdb` read-only.
+- **Partitions:** only bronze and silver are Dagster assets partitioned by season. Gold marts and ratings are **not** partitioned; they are rebuilt in full by one dbt build through `dagster-dbt`.
+- **Rebuild check:** `make rebuild` is verified by **row count plus a content hash of each table's sorted rows**, not by file bytes.
+
+## 4. Data quality
+
+- **Python contracts:** pandera checks every DataFrame before silver is written.
+- **Quarantine:** failing rows go to `quarantine_{table}` with columns `match_id`, `reason`, `rule`, `raw_ref` and `run_id`. Silver only holds rows that passed.
+- **dbt:** enforced model contracts plus tests (`unique`, `not_null`, `relationships`, `accepted_values`) on the marts.
+- **Reconciliation:** runs as Dagster asset checks, covering:
+  - deliveries summing to innings totals,
+  - 11 players per side, or 12 with an Impact Player,
+  - at most 10 wickets.
+- **Quality report:** built from the quarantine tables, for each season.
+
+## 5. Reference data
+
+- **Teams:** a canonical team is the **franchise ownership entity**, held in `team_aliases` with a source link for each mapping.
+  - Renames of the same franchise: Daredevils → Capitals, Kings XI → Punjab Kings.
+  - Separate franchises: Deccan Chargers and Sunrisers, and Gujarat Lions and Gujarat Titans.
+- **Venues:** `venue_aliases` maps each venue to one canonical ID, seeded from the Cricsheet venue register.
+- **Home games:** `is_home` comes from a versioned config of home venues per team per season, with sources. It is three-valued (`home`, `away`, `neutral`) and covers 2009 in South Africa, the UAE seasons (2014, 2020, 2021) and 2022 (Maharashtra and Gujarat only).
+- **Season rules:** purse, squad and overseas limits, retention and RTM rules, and the Impact Player rule. They are researched by Claude and kept in `config/` with a source link for every value. Anything not confirmed is marked unconfirmed, never guessed.
+
+## 6. Player attributes
+
+- **Pre-fill sources:** Wikidata and DBpedia, which are open endpoints, so no scraping is needed. They are linked through Cricsheet register `key_cricinfo` → Wikidata ESPNcricinfo ID → DBpedia. *(The Wikidata property ID still has to be verified.)*
+  - **Batting hand and bowling style:** from DBpedia `battingSide` and `bowlingSide`. Bowling style is mapped to `{pace, spin} × {left, right arm}` with a tested lookup table.
+  - **Date of birth:** from Wikidata.
+  - **Nationality:** from Wikidata "country for sport", with the T20I team as a fallback.
+- **Cricinfo:** not scraped. It blocks automated access, which conflicts with the terms rule in the brief.
+- **Role:** derived **from the match data** (share of balls bowled versus faced, and keeping records), not from text sources.
+- **Overseas status:** derived from nationality using that season's rules.
+- **Overrides:** a version-controlled CSV fills gaps and corrects errors. Every value records `source`, `retrieved_at` and `hand_checked`.
+- **History:** changes over time are stored as SCD Type 2 rows in `dim_player`.
+
+## 7. Point-in-time ratings
+
+- **Point-in-time rule:** a match on date D may only use matches dated **strictly before D**, so same-day matches are excluded. The test asserts `max(source_match_date) < match_date` for every row.
+- **Phases:** overs 1–6, 7–15 and 16–20.
+- **Shrinkage (empirical Bayes):**
+  - **Dismissal rate per ball:** beta-binomial, with a prior for each role and phase.
+  - **Runs per ball:** normal-normal.
+  - **Prior strength:** estimated by method-of-moments on players with large samples.
+- **Time decay:** exponential, computed in dbt SQL with the cumulative-sum identity `Σ wᵢxᵢ = e^(−λt) · Σ e^(λtᵢ)xᵢ`. Days are counted from a reference date to avoid overflow. Ratings are joined to matches with DuckDB `ASOF JOIN`.
+- **Python fallback:** the `ratings/` module is used only if the SQL becomes unreadable.
+- **Tuning:** the decay rate and T20I weight are tuned on **next-ball log-likelihood** (dismissal and runs outcomes) over the development IPL seasons. They are not tuned on the win model.
+
+## 8. Win model
+
+- **Prediction moment:** just after the toss, when both XIs are known.
+- **Starting XI:** `info.players` minus anyone who came in as a `match` replacement.
+  - The Impact Player actually used is stored as an event but is **never a model input**.
+  - The `impact_player_era` flag captures the rule change.
+  - A leakage test enforces this.
+- **Batting slots:** come from each player's **expected batting position**, their decay-weighted point-in-time average position. Debutants get their role's typical position. The actual batting order of the match is never read, and a test checks it.
+- **Low-sample features:** `n_low_sample_players` and `xi_rating_uncertainty` (summed posterior variance).
+- **Outcome labels:**
+  - **No-results and abandoned matches:** excluded from training.
+  - **Ties:** use the official winner, including super overs, plus a `decided_by_super_over` flag.
+  - **DLS matches:** kept with a `reduced_overs` flag, plus a sensitivity check that drops them.
+- **Team orientation:** each match is trained in both orientations, with features negated and the label flipped. Predictions are made symmetric: p = ½(p(A beats B) + 1 − p(B beats A)).
+- **Elo:**
+  - Win/loss only, no margin of victory.
+  - Every team starts at 1500, including new franchises.
+  - A home bonus applies only when `is_home` says so.
+  - Each team is pulled one third of the way back toward 1500 at every season start.
+  - K and the pull-back fraction are tuned on development seasons.
+  - IPL matches only.
+- **Baselines:** home team always wins, toss winner always wins, and Elo.
+- **Models:** logistic regression, then LightGBM.
+- **LightGBM tuning:** monotone constraints on strength-difference features. Hyperparameters are chosen once from a fixed grid of about 20 settings by rolling development log loss. The number of trees is fixed, with no early stopping.
+- **Validation:**
+  - **Development:** rolling-origin tests on 2015–2024.
+  - **Tuning:** inside each training window only (nested).
+  - **Final test:** **2025–2026 are locked** and evaluated once, at the end.
+- **Calibration:** **Platt scaling only**, fit on the last season of each training window. Isotonic is rejected because it overfits about 70 points.
+  - Logistic regression is reported both uncalibrated and calibrated.
+  - ECE uses 10 equal-frequency bins.
+- **Metrics:** log loss and Brier score are primary, with accuracy secondary.
+  - 95% intervals come from a **paired bootstrap over matches**, including the model-minus-Elo difference.
+  - A gain counts only if its interval excludes 0.
+  - Results are reported pooled and for each season.
+
+## 9. Player value and swap simulator
+
+- **Replacement level:** for each role and season, the mean point-in-time rating of fringe squad players, meaning the bottom 30% by appearances among players who played at least once that season. It uses Cricsheet only. In Phase 5 it is checked against the ratings of players bought at base price.
+- **Value of player P in role R:**
+  1. Take every real XI from the previous season.
+  2. Put P in place of that XI's player in role R closest to P's expected batting position.
+  3. Play it against every opponent XI from that season, at a neutral venue, with the toss averaged.
+  4. Value is the mean Δwin probability compared with the same XI holding a replacement-level player. The spread across XIs is reported too.
+- **Write-up:** must say that swap effects are model estimates, not causal effects.
+
+## 10. Auction data, price model, optimiser and backtest
+
+- **Name matching:**
+  - Uses rapidfuzz against Cricsheet `names.csv` variants, limited to players active within ±1 season.
+  - Auto-accepts only a score of at least 95 that is clearly ahead of the runner-up.
+  - Everything else goes to the version-controlled `auction_name_review.csv`, and decisions made by hand are reused on reruns.
+  - The coverage report shows auto-matched, hand-matched and unmatched counts for each season.
+- **Price model:**
+  - Target: **`log(price / purse)`**, with the raw currency kept alongside it, covering the USD era and the INR era.
+  - Data: **open-auction purchases only**. Retentions and RTMs are kept in the data but excluded from training.
+  - Features: include `is_mega_auction` and base price.
+  - Models: ridge regression as the main model, and LightGBM only if it beats ridge on later auctions.
+  - Validation: train on earlier auctions and test on later ones.
+  - Metric: MAE on the log scale with bootstrap intervals, compared with the median-by-role baseline.
+- **Optimiser (PuLP/CBC):**
+  - Variables: `x_i` means buy player i, and `y_i ≤ x_i` means player i is in the first-choice XI.
+  - Objective: maximise `Σ vᵢyᵢ + β·Σ vᵢ(xᵢ − yᵢ)`, with β around 0.1–0.2, tuned and reported.
+  - XI constraints: exactly 11 players, at most 4 overseas, at least 1 wicketkeeper, at least 5 bowling options.
+  - Squad constraints: purse, squad size limits and overseas limit, all from `dim_season_rules`.
+  - Starting state: the team's actual position after retentions.
+  - Prices: **predicted**, not actual.
+- **Backtest:**
+  - Before each auction, rank bought players by value relative to predicted price.
+  - Each player's outcome is next-season realised value multiplied by matches played, and **players who never played count as 0**.
+  - Metrics: Spearman correlation and the top-versus-bottom quintile gap in contribution per crore, both with bootstrap intervals.
+  - Only development-window auctions are backtested until the final run.
+
+## 11. API and frontend
+
+- **API:** FastAPI, versioned under `/v1`:
+  - `GET /players/{id}` returns the profile and attributes with their sources.
+  - `GET /players/{id}/ratings?asof=` returns ratings as of a date.
+  - `POST /predict` takes two XIs, a venue and the toss.
+  - `POST /simulate/swap`
+  - `GET /auctions/{season}/value`
+  - `POST /optimise`
+- **Snapshot header:** every response carries `X-Data-Snapshot`.
+- **Data and models:** DuckDB is opened read-only, and models are loaded once at startup from MLflow by run ID.
+- **Frontend:** Vite, React and TypeScript, with TanStack Query, and Observable Plot for charts (visx if lower-level control is needed).
+  - API types are generated from FastAPI's OpenAPI schema with `openapi-typescript`.
+  - It is served by nginx in Docker Compose.
+
+## 12. CI and experiment tracking
+
+- **Fixtures:** about 25 real Cricsheet match files in `tests/fixtures/cricsheet/`, with an attribution file (ODC-BY) and a list naming the edge case each covers:
+  - an old schema version, a no-result, a DLS match, a super over,
+  - an Impact Player substitution, a concussion sub,
+  - a renamed team, a renamed venue, a T20I.
+- **CI build:** runs the full Dagster and dbt build on these fixtures, plus lint, type checks and tests.
+- **Data snapshot ID:** SHA-256 over the sorted `(match_id, sha256)` pairs in the manifest, plus hashes of the config files and overrides CSV.
+- **MLflow:** each run logs the snapshot ID with the git commit.
