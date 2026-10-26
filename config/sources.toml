@@ -3,6 +3,7 @@
 #
 # kind = "zip"  -> archive of per-match JSON files; each member is checksummed in the manifest
 # kind = "file" -> a single file stored as received
+# competition    -> for match archives, the value written to matches.competition
 #
 # Cricsheet data is licensed ODC-BY (https://cricsheet.org/register/ and https://cricsheet.org/downloads/).
 # cricsheet.org/robots.txt allows /downloads/ and /register/ (checked 2026-10-26).
@@ -11,11 +12,13 @@
 name = "cricsheet_ipl"
 url = "https://cricsheet.org/downloads/ipl_json.zip"
 kind = "zip"
+competition = "ipl"
 
 [[source]]
 name = "cricsheet_t20i_male"
 url = "https://cricsheet.org/downloads/t20s_male_json.zip"
 kind = "zip"
+competition = "t20i"
 
 [[source]]
 name = "cricsheet_people"

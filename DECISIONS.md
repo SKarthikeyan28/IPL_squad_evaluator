@@ -44,6 +44,19 @@ Settled in a design review on 2026-10-26. These decisions refine [Project_brief.
 - **Corrections:** a corrected match becomes a new version. Silver keeps the latest version of each `match_id`, and the manifest keeps the full history.
 - **Parser:** builds pandas DataFrames, then writes Parquet through pyarrow. Each Cricsheet schema version is handled explicitly.
 - **Canonical season:** the year of a match's first date, not Cricsheet's `info.season` label. Cricsheet labels IPL 2008 as `"2007/08"`, 2010 as `"2009/10"` and 2020 as `"2020/21"`. The original label is kept as `season_label`.
+- **Staging tables:** `matches`, `innings`, `deliveries`, `match_players` and `players` as in the brief, plus three more:
+  - `wickets`: a delivery can have two wickets.
+  - `replacements`: Impact Player and concussion subs, recorded as events.
+  - `player_name_variants`: from the Cricsheet names register.
+- **Partitions:** match tables are hive-partitioned by season. The register tables are not partitioned.
+- **Parse failures vs quarantine:** a file that cannot be read at all goes to `_parse_failures.parquet` and doesn't stop the build. Possible reasons:
+  - an unknown schema version,
+  - malformed JSON,
+  - a person missing from the registry,
+  - a checksum mismatch.
+
+  Rows that parse but fail a *data contract* go to quarantine instead (Wed).
+- **Impact Player reason:** Cricsheet records Impact Player subs with the reason `impact_player`, which the format docs don't list. The real data is what counts.
 - **Conditional requests:** the downloader sends `If-Modified-Since` using the stored `Last-Modified` value, so an unchanged source costs one 304 response. A body whose SHA-256 is already stored is also skipped.
 - **T20Is:** men's only, from 2005, and only matches where both sides are Full Members. This is one config switch. Opponent-strength adjustment goes in the write-up as future work.
 

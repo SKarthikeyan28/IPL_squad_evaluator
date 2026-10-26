@@ -35,6 +35,7 @@ class Source:
     name: str
     url: str
     kind: SourceKind
+    competition: str | None = None  # set for match archives
 
 
 class FetchStatus(enum.Enum):
@@ -55,7 +56,10 @@ class FetchResult:
 def load_sources(path: Path) -> list[Source]:
     with path.open("rb") as f:
         config = tomllib.load(f)
-    return [Source(name=s["name"], url=s["url"], kind=s["kind"]) for s in config["source"]]
+    return [
+        Source(name=s["name"], url=s["url"], kind=s["kind"], competition=s.get("competition"))
+        for s in config["source"]
+    ]
 
 
 def utc_now() -> datetime:

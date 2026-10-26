@@ -1,4 +1,4 @@
-.PHONY: install ingest verify test lint typecheck check
+.PHONY: install ingest verify silver test lint typecheck check
 
 install:
 	uv sync
@@ -8,6 +8,9 @@ ingest:
 
 verify:
 	uv run python -m cricket_value.ingest --verify
+
+silver:
+	uv run python -m cricket_value.ingest.silver
 
 test:
 	uv run pytest
