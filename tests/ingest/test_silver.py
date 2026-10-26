@@ -248,3 +248,36 @@ def test_registers_use_latest_download_and_check_its_checksum(tmp_path: Path) ->
     (raw / "cricsheet_people" / "20261027T070000Z.csv").write_bytes(b"tampered")
     with pytest.raises(ValueError, match="checksum mismatch"):
         build_registers(raw, Manifest(raw / "manifest"), out)
+
+
+def test_contract_errors_quarantine_the_match_and_are_logged(raw: Path, tmp_path: Path) -> None:
+    doc = json.loads((FIXTURES / "ipl" / "1082591.json").read_text())
+    doc["info"]["toss"]["winner"] = "Somebody Else"
+    stage_archive(
+        raw,
+        "cricsheet_ipl",
+        {**fixture_members("cricsheet_ipl"), "1082591.json": json.dumps(doc).encode()},
+        "2026-10-27T07:00:00Z",
+    )
+    out = tmp_path / "silver"
+
+    result = build_silver(raw, Manifest(raw / "manifest"), out, COMPETITIONS)
+
+    assert result.quarantined_matches == 1
+    for table in SILVER_TABLES:
+        assert "1082591" not in set(read(out, table)["match_id"]), table
+    q = pd.read_parquet(out / "_quarantine" / "matches.parquet")
+    assert q["match_id"].tolist() == ["1082591"]
+    assert q["quarantine_rules"].item() == "matches.toss_winner_is_a_team"
+    assert len(pd.read_parquet(out / "_quarantine" / "deliveries.parquet")) == 248
+
+    violations = pd.read_parquet(out / "_violations.parquet")
+    errors = violations[violations["severity"] == "error"]
+    assert set(zip(errors["match_id"], errors["rule"], strict=True)) == {
+        ("1082591", "toss_winner_is_a_team")
+    }
+    # the real 10-player Serbia side is flagged, not quarantined
+    warn = violations[violations["severity"] == "warn"]
+    assert ("1452625", "starting_xi_has_11") in set(
+        zip(warn["match_id"], warn["rule"], strict=True)
+    )

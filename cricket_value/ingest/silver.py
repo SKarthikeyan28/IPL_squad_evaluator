@@ -30,6 +30,8 @@ import pyarrow.parquet as pq
 from cricket_value.ingest.manifest import Manifest
 from cricket_value.ingest.parse import ParsedMatch, ParseError, parse_match
 from cricket_value.ingest.schemas import PARSE_FAILURES, SILVER_TABLES
+from cricket_value.quality.contracts import apply_quarantine, check_contracts, violations_table
+from cricket_value.quality.reconciliation import reconcile
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,8 @@ class ParseFailure:
 class SilverBuild:
     row_counts: dict[str, int] = field(default_factory=dict)
     failures: list[ParseFailure] = field(default_factory=list)
+    quarantined_matches: int = 0
+    violations: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
 def latest_versions(manifest: Manifest, sources: list[str]) -> pd.DataFrame:
@@ -58,10 +62,15 @@ def latest_versions(manifest: Manifest, sources: list[str]) -> pd.DataFrame:
 def build_silver(
     raw_dir: Path, manifest: Manifest, out_dir: Path, competitions: Mapping[str, str]
 ) -> SilverBuild:
-    """Rebuild every silver table. ``competitions`` maps source name -> competition code."""
+    """Rebuild every silver table. ``competitions`` maps source name -> competition code.
+
+    Parsed rows are checked against the data contracts before anything is written.
+    Matches that break an ``error`` rule are moved, with all their rows, to
+    ``_quarantine/<table>.parquet``. Every violation (``error`` and ``warn``) and every
+    reconciliation flag is logged in ``_violations.parquet``.
+    """
     result = SilverBuild()
-    rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    season_of: dict[str, int] = {}
+    parsed: list[ParsedMatch] = []
 
     versions = latest_versions(manifest, list(competitions))
     for archive_path, group in versions.groupby("archive_path"):
@@ -69,7 +78,7 @@ def build_silver(
             for f in group.itertuples():
                 source, member, sha256 = str(f.source), str(f.member), str(f.sha256)
                 try:
-                    parsed = _parse_member(zf, member, sha256, competitions[source])
+                    parsed.append(_parse_member(zf, member, sha256, competitions[source]))
                 except ParseError as e:
                     result.failures.append(
                         ParseFailure(
@@ -81,19 +90,19 @@ def build_silver(
                             reason=str(e),
                         )
                     )
-                    continue
-                season_of[parsed.match["match_id"]] = parsed.match["season"]
-                rows["matches"].append(parsed.match)
-                for table in SILVER_TABLES:
-                    if table != "matches":
-                        rows[table].extend(getattr(parsed, table))
+
+    tables = to_frames(parsed)
+    violations = pd.concat([check_contracts(tables), reconcile(tables)], ignore_index=True)
+    clean, quarantined = apply_quarantine(tables, violations)
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    for table, (schema, sort_key) in SILVER_TABLES.items():
-        df = _to_frame(rows[table], schema)
-        df["season"] = df["match_id"].map(season_of).astype("int64")
-        _write_partitioned(out_dir / table, df.sort_values(["season", *sort_key]), schema)
-        result.row_counts[table] = len(df)
+    for table, (schema, _) in SILVER_TABLES.items():
+        _write_partitioned(out_dir / table, clean[table], schema)
+        result.row_counts[table] = len(clean[table])
+    _write_quarantine(out_dir / "_quarantine", quarantined)
+    _write_file_atomic(out_dir / "_violations.parquet", violations_table(violations))
+    result.quarantined_matches = len(quarantined["matches"])
+    result.violations = violations
 
     failures = sorted(result.failures, key=lambda f: (f.source, f.member))
     _write_file_atomic(
@@ -101,6 +110,26 @@ def build_silver(
         pa.Table.from_pylist([asdict(f) for f in failures], schema=PARSE_FAILURES),
     )
     return result
+
+
+def to_frames(parsed: list[ParsedMatch]) -> dict[str, pd.DataFrame]:
+    """Parsed matches -> one typed DataFrame per silver table, with a ``season`` column,
+    sorted by season and the table's key."""
+    rows: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    season_of: dict[str, int] = {}
+    for p in parsed:
+        season_of[p.match["match_id"]] = p.match["season"]
+        rows["matches"].append(p.match)
+        for table in SILVER_TABLES:
+            if table != "matches":
+                rows[table].extend(getattr(p, table))
+
+    frames = {}
+    for table, (schema, sort_key) in SILVER_TABLES.items():
+        df = _to_frame(rows[table], schema)
+        df["season"] = df["match_id"].map(season_of).astype("int64")
+        frames[table] = df.sort_values(["season", *sort_key], ignore_index=True)
+    return frames
 
 
 def _parse_member(zf: zipfile.ZipFile, member: str, sha256: str, competition: str) -> ParsedMatch:
@@ -142,6 +171,23 @@ def _write_partitioned(table_dir: Path, df: pd.DataFrame, schema: pa.Schema) -> 
         pq.write_table(arrow.replace_schema_metadata(None), path)
     shutil.rmtree(table_dir, ignore_errors=True)
     os.replace(tmp, table_dir)
+
+
+def _write_quarantine(qdir: Path, quarantined: dict[str, pd.DataFrame]) -> None:
+    """One file per table: the quarantined rows, their season, and the rules they broke."""
+    tmp = qdir.with_name(f".{qdir.name}.tmp")
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    for table, df in quarantined.items():
+        schema = (
+            SILVER_TABLES[table][0]
+            .append(pa.field("season", pa.int64()))
+            .append(pa.field("quarantine_rules", pa.string()))
+        )
+        arrow = pa.Table.from_pandas(df[schema.names], schema=schema, preserve_index=False)
+        pq.write_table(arrow.replace_schema_metadata(None), tmp / f"{table}.parquet")
+    shutil.rmtree(qdir, ignore_errors=True)
+    os.replace(tmp, qdir)
 
 
 def _write_file_atomic(path: Path, table: pa.Table) -> None:
@@ -203,6 +249,10 @@ def main() -> None:
     for table, n in result.row_counts.items():
         print(f"{table:<20} {n:>10,} rows")
     print(f"{'parse failures':<20} {len(result.failures):>10,}")
+    print(f"{'quarantined matches':<20} {result.quarantined_matches:>10,}")
+    counts = result.violations.groupby(["severity", "table", "rule"]).size().reset_index()
+    for row in counts.itertuples(index=False):
+        print(f"  {row[0]:<5} {row[1]}.{row[2]}: {row[3]:,}")
     for f in result.failures:
         print(f"  {f.source}/{f.member}: {f.error_type}: {f.reason}")
 

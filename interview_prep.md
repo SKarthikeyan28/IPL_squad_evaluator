@@ -12,6 +12,7 @@
 8. [Where pandas is used](#8-where-pandas-is-used)
 9. [The raw layer: incremental, idempotent downloads](#9-the-raw-layer-incremental-idempotent-downloads)
 10. [The parser and staging (silver) tables](#10-the-parser-and-staging-silver-tables)
+11. [Data contracts, quarantine and reconciliation](#11-data-contracts-quarantine-and-reconciliation)
 
 ---
 
@@ -300,3 +301,50 @@ Code: `cricket_value/ingest/parse.py` (one match → rows), `schemas.py` (Arrow 
 - *"Why parse in Python and not SQL?"* Nested JSON with optional fields that vary by version is clearer and easier to test in Python. Everything after staging is SQL.
 - *"Why rebuild everything rather than only new files?"* At 3.6 s, a full rebuild is simpler and always correct. Season-level incremental runs arrive with Dagster partitions, and the manifest already records which files are new.
 - *"How would this scale?"* Parsing is per-file and independent, so it parallelises cleanly across processes or Spark tasks. The Parquet layout stays the same.
+
+---
+
+## 11. Data contracts, quarantine and reconciliation
+
+Code: `cricket_value/quality/contracts.py`, `reconciliation.py` and `report.py`. Output: `data/silver/_violations.parquet`, `data/silver/_quarantine/` and `reports/data_quality.md`.
+
+**Three kinds of check, in order:**
+
+| Check | Question | Example | On failure |
+|---|---|---|---|
+| **Parse** | Can the file be read at all? | unknown schema version | file goes to `_parse_failures` |
+| **Contract** | Is each row valid on its own, and do the keys join? | `runs_total = runs_batter + runs_extras`; wicket kind in the accepted list; no duplicate ball keys; every innings belongs to an existing match | `error` quarantines the match, `warn` flags it |
+| **Reconciliation** | Do the numbers agree *across* tables? | second-innings target = first-innings runs + 1; "won by 35 runs" equals the score difference; 11 players per side | flagged (`warn`), kept |
+
+**What is a data contract?** It's an explicit, versioned promise about a table's shape and content: column types, keys, allowed values and rules between columns. Producers must keep it, and consumers can rely on it. Here, types are enforced by the Arrow schemas, and values and rules by pandera. Every rule has a **name**, and the same name appears in the tests, the violations log and the report, so a failure can be traced from report to code in one search.
+
+**Why quarantine the whole match and not just the bad row?** Dropping one bad delivery would leave a match whose innings total, ratings and features are silently wrong, which is worse than missing the match entirely. Quarantining the whole match keeps every table internally consistent. The match isn't lost: the rows sit in `_quarantine` with the rules they broke, and the raw file is untouched, so a fixed rule or a corrected Cricsheet file brings it back on the next rebuild.
+
+**Why two severities?**
+- A wrong header field (`overs_per_side = 50` on a T20I where no over past the 20th was bowled) doesn't make the balls wrong. Throwing away 11 valid matches over a field nobody uses would be over-zealous.
+- **`error` = unusable, `warn` = suspicious but usable.**
+- This is how tools like dbt (`severity: warn`) and Great Expectations ("mostly") handle it.
+
+**"Never silently dropped":** every row is accounted for in exactly one place: silver, quarantine or parse failures. Every warning is logged with its match ID.
+
+**Calibrate rules against real data before trusting them.** Each check was prototyped on all 4,889 matches *before* it was written as a rule:
+- **Kept as warnings:** a check that fires on hundreds of valid matches is a wrong check. The real numbers are tiny: 5 ten-player XIs, 1 target mismatch, 1 margin mismatch. Those are genuine source anomalies worth flagging, not bugs in the checks.
+- **A bug the test suite didn't catch:** the warning count was 20 when profiling had found 1 such ball. pandera reports a failed whole-row rule once *per column*, so the count was multiplied by the number of columns. A test now pins "one violation per failing row".
+
+**Reconciliation without totals.** The brief said "delivery runs sum to innings totals", but Cricsheet doesn't record innings totals. The ball-by-ball runs are instead tied to the two independent numbers it *does* record, the chase target and the winning margin. That's the same idea as tying a ledger to a bank statement.
+
+**Documentation versus reality (again).** Cricsheet's documented wicket kinds omit `retired out` and `retired not out`, both valid under the Laws and both present in the data. Accepted values are the documented list plus observed values. Each addition is commented in code, so nothing is silently allowed.
+
+**Determinism.** Violations are sorted, and the run is identified by the raw `snapshot_id`, not a timestamp. Rebuilding the same raw data gives identical logs, so idempotency covers the quality outputs too.
+
+**Real run (2026-10-26):** 4,889 matches loaded, 0 quarantined, 0 unparseable, and 19 warnings:
+- 11 T20Is with `overs_per_side = 50`
+- 1 wide crediting runs to the batter
+- 5 ten-player XIs
+- 1 target mismatch
+- 1 margin mismatch
+
+**Likely follow-up questions**
+- *"Why pandera and not Great Expectations?"* pandera is code-first, typed, and lives next to the pandas code it checks, with no separate config store. Great Expectations suits teams that want expectation suites and generated docs managed outside the code. The marts get dbt tests, which are the SQL-side equivalent.
+- *"What happens when a quarantined match should actually be allowed?"* Change the rule, with a code review and a test, then rebuild. The raw file never changed, so the match comes back automatically. Rows are never hand-edited.
+- *"How would you alert on this in production?"* A Dagster asset check fails the run on any `error` and records warning counts as metadata. In production, a jump in warnings or quarantines compared with the previous run would trigger an alert. That's the next step.
