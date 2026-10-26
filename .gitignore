@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Data: raw files and manifest are local; rebuild with `make ingest`
+data/*
+!data/raw/
+data/raw/*
+!data/raw/.gitkeep
+
+# Tools
+.DS_Store
+.env
