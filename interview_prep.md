@@ -11,6 +11,7 @@
 7. [Data engineering concepts used in this project](#7-data-engineering-concepts-used-in-this-project)
 8. [Where pandas is used](#8-where-pandas-is-used)
 9. [The raw layer: incremental, idempotent downloads](#9-the-raw-layer-incremental-idempotent-downloads)
+10. [The parser and staging (silver) tables](#10-the-parser-and-staging-silver-tables)
 
 ---
 
@@ -239,3 +240,63 @@ Code: `cricket_value/ingest/download.py` and `cricket_value/ingest/manifest.py`.
 **Likely follow-up questions**
 - *"Why CSV for the manifest and not a database table?"* It's small (about 5k rows), easy to read and diff, and written sorted so diffs stay stable. At scale it would be a table in the warehouse or a catalog such as Iceberg, Delta or Hive metastore.
 - *"Is the data reproducible from a fresh clone?"* The code and config are, but Cricsheet only serves the *current* zip, so a fresh clone downloads today's data. Exact reproduction needs the stored raw files, which is why runs log the `snapshot_id`. At scale, raw files would live in versioned object storage (S3 with versioning).
+
+---
+
+## 10. The parser and staging (silver) tables
+
+Code: `cricket_value/ingest/parse.py` (one match → rows), `schemas.py` (Arrow types) and `silver.py` (batch build).
+
+**The flow:** for each match, find the latest version in the manifest. Read it *straight from the stored zip* without extracting it, re-check its SHA-256, parse it into rows, and write hive-partitioned Parquet with `season=YYYY/` folders.
+
+**Tables and grain.** Always state the grain first in an interview:
+
+| Table | One row per |
+|---|---|
+| `matches` | match |
+| `innings` | innings, including super-over innings |
+| `deliveries` | ball bowled, including wides and no-balls |
+| `wickets` | dismissal; a ball can have two |
+| `replacements` | substitution event (Impact Player, concussion) |
+| `match_players` | player listed for a team in a match |
+| `players`, `player_name_variants` | person / alternate name (from the registers) |
+
+**Profile the data before writing the parser.** Profiling all 4,889 files first turned up things neither the docs nor assumptions predicted:
+- **Season labels:** `"2007/08"` means IPL 2008, so season comes from the first match date.
+- **Impact Player reason:** subs use `impact_player`, which the docs don't list.
+- **Rare events:**
+  - two wickets on one ball,
+  - bowl-outs,
+  - `Awarded` results,
+  - teams listing 10 or 13 players,
+  - matches played over two dates.
+
+*Interview line:* "I profiled the data before writing the parser, because the documentation and the data disagreed."
+
+**Handling schema versions explicitly:**
+- `SUPPORTED_VERSIONS` is an allow-list, so an unknown future version *fails loudly* instead of being half-parsed.
+- `actual_delivery` (added in 1.2.0) is derived for older files. A test removes the field from every real fixture and checks that the derived values match Cricsheet's exactly.
+- `registry.venues` (added in 1.3.0) is used when present and left null otherwise.
+
+**Parse failures vs data contracts.** These are two separate kinds of failure:
+- **Can't read the file** (unknown version, bad JSON, unregistered person, checksum mismatch): the file goes to `_parse_failures.parquet`, and the build continues.
+- **Readable but implausible** (a team with 10 players, runs that don't add up): the parser keeps the rows, and the *contract checks* decide. That's why the 10-player Serbia match parses fine. The parser's job is to reshape data, not to judge it.
+
+**Explicit Arrow schemas.** Without declared types, pandas guesses them per batch. A column like `win_by_runs` holds ints in one season and turns into floats in another once a null appears, because NumPy ints can't be null. The parser builds rows into Arrow tables with declared types, then uses Arrow-backed pandas dtypes (`pd.ArrowDtype`) that keep nullable integers as integers. Register IDs are read as strings, so `key_cricinfo` stays `"253802"` and never becomes `253802.0`.
+
+**Idempotent writes.** Each table is written to a temp directory and swapped in only when it's complete:
+- A rebuild **replaces** the table instead of appending, so there are no duplicates and stale season folders disappear.
+- A crash part-way leaves the previous version intact.
+- Rows are sorted before writing, so the output is deterministic.
+- *Verified on real data:* hashing every table's contents before and after a rebuild gave identical hashes.
+
+**Engine-neutral files.** pandas embeds its own metadata in Parquet files, and pandas couldn't read some of it back for list columns. It's stripped, so DuckDB, dbt and Spark all see plain Arrow types.
+
+**Real fixtures in tests.** 15 real Cricsheet files, each chosen for a specific edge case, are committed with ODC-BY attribution. Tests use real data shapes instead of hand-written JSON that might not match reality.
+
+**Numbers (real run, 2026-10-26):** 4,889 matches and 1,115,689 deliveries, 0 parse failures, a 3.6 s full rebuild, and 5.2 MB of delivery Parquet.
+
+**Likely follow-up questions**
+- *"Why parse in Python and not SQL?"* Nested JSON with optional fields that vary by version is clearer and easier to test in Python. Everything after staging is SQL.
+- *"Why rebuild everything rather than only new files?"* At 3.6 s, a full rebuild is simpler and always correct. Season-level incremental runs arrive with Dagster partitions, and the manifest already records which files are new.
+- *"How would this scale?"* Parsing is per-file and independent, so it parallelises cleanly across processes or Spark tasks. The Parquet layout stays the same.
