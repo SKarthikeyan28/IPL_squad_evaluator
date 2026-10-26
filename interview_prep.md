@@ -391,6 +391,34 @@ A test proves that rebuilding 2017 changes 2017's files and leaves every other s
 - **An empty-season test found a real bug.** On an empty frame, the reconciliation limits came out as booleans and the comparison crashed. Building a partition for a season with no matches (such as next year) would have failed in production.
 - **Reports must sort explicitly.** Moving to season partitions changed the order rows were read in, and the report's row order changed with it. Sorting explicitly made it deterministic again.
 
+**Dagster ↔ Airflow: the same ideas under different names**
+
+Airflow is the most common orchestrator in job ads, so be ready to translate. The underlying ideas are the same; what differs is whether the unit is a *task* (Airflow) or the *data asset* a task produces (Dagster).
+
+| Concept | Airflow | Dagster | In this project |
+|---|---|---|---|
+| A pipeline | **DAG** (a Python file defining tasks and their order) | **Asset graph**, plus **jobs** that select part of it | `ingest`, `silver_by_season` and `data_quality_report` jobs |
+| A unit of work | **Task**, an instance of an **Operator** (`PythonOperator`, `BashOperator`, …) or a `@task` function (TaskFlow API) | **Asset** (`@asset`, `@multi_asset`) or, lower level, an **op** | `silver_season` multi-asset |
+| Dependencies | Declared between tasks: `extract >> transform` | Declared between data: `deps=[...]` or function inputs | `deps=[MATCH_INDEX_KEY]` |
+| Passing data between steps | **XCom** (small values through the metadata database) | **IO managers**, or each asset reads and writes its own storage | Assets read and write Parquet themselves |
+| Data-aware scheduling | **Datasets** (Airflow 2.4+, renamed **Assets** in Airflow 3) | Native: the graph *is* assets; **automation conditions** and sensors | Not used yet (manual or scheduled) |
+| Time slice of a run | **Logical date** (formerly `execution_date`) and the data interval | **Partition key** (time window, static, dynamic or multi-dimensional) | Yearly season partitions `2005`…`2026` |
+| Rebuilding history | `airflow dags backfill` / clearing task instances | **Backfill** over a partition range, or a single-run backfill policy | All 22 seasons in one ~7 s run |
+| Waiting for something external | **Sensor** (e.g. `FileSensor`, `ExternalTaskSensor`) | **Sensor** (`@sensor`, asset sensors) | Not needed yet |
+| Timed runs | `schedule="0 6 * * 1"` on the DAG | **ScheduleDefinition** on a job | `weekly_ingest`, off by default |
+| Data quality | Extra tasks (SQL check operators, Great Expectations) or callbacks | **Asset checks** attached to the asset, shown in the UI | `contracts` and `reconciliation` checks |
+| External systems and config | **Connections**, **Hooks**, **Variables** | **Resources** (typed config classes, swappable in tests) | `ProjectPaths`, `CricsheetHttp` |
+| Limiting concurrency | **Pools**, `max_active_runs` | **Concurrency pools** and run queue limits | Not needed |
+| Where tasks execute | **Executors**: Local, Celery, Kubernetes | **Executors** plus **run launchers** (in process, multiprocess, Docker, Kubernetes) | In process, locally |
+| Always-on services | **Scheduler**, webserver, metadata DB (Postgres/MySQL) | **Daemon** (schedules, sensors, backfills), webserver, instance storage (SQLite locally, Postgres in production) | `make dagster` with SQLite in `.dagster/` |
+| Lineage | Through Datasets/Assets or OpenLineage integration | Built in: the asset graph | UI shows raw → silver → report |
+| Testing locally | Harder: needs a scheduler context, or `dag.test()` | `dg.materialize([...])` inside pytest | `tests/orchestration/test_dagster.py` |
+| dbt integration | Run dbt as a task (`BashOperator`, Cosmos) | `dagster-dbt`: every dbt model becomes an asset | Coming with the dbt marts |
+
+**One-sentence translation:** a Dagster asset is an Airflow task that also declares the data it produces. Once outputs are declared, lineage, staleness, partitioned backfills and per-table checks follow naturally, which in Airflow you build on top.
+
+**When I'd pick Airflow instead:** a team already running it, workflows that are mostly "call this API, then run that job" rather than building data tables, or a need for its very large library of provider operators.
+
 **Likely follow-up questions**
 - *"Dagster or Airflow?"* Airflow is the industry standard and very good for task scheduling. Dagster's asset model gives lineage, partition-aware backfills and data quality checks as built-in concepts, which matches what this project is meant to show. In an interview I'd say I can map either one onto the other: an asset is roughly a task plus a declared output.
 - *"How does it know what's stale?"* Each materialisation is recorded. When an upstream asset is newer than a downstream one, the UI marks the downstream as stale. Automation conditions can then rebuild it automatically, which is the next step after a manual or scheduled ingest.
