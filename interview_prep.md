@@ -13,6 +13,7 @@
 9. [The raw layer: incremental, idempotent downloads](#9-the-raw-layer-incremental-idempotent-downloads)
 10. [The parser and staging (silver) tables](#10-the-parser-and-staging-silver-tables)
 11. [Data contracts, quarantine and reconciliation](#11-data-contracts-quarantine-and-reconciliation)
+12. [Orchestration with Dagster](#12-orchestration-with-dagster)
 
 ---
 
@@ -348,3 +349,77 @@ Code: `cricket_value/quality/contracts.py`, `reconciliation.py` and `report.py`.
 - *"Why pandera and not Great Expectations?"* pandera is code-first, typed, and lives next to the pandas code it checks, with no separate config store. Great Expectations suits teams that want expectation suites and generated docs managed outside the code. The marts get dbt tests, which are the SQL-side equivalent.
 - *"What happens when a quarantined match should actually be allowed?"* Change the rule, with a code review and a test, then rebuild. The raw file never changed, so the match comes back automatically. Rows are never hand-edited.
 - *"How would you alert on this in production?"* A Dagster asset check fails the run on any `error` and records warning counts as metadata. In production, a jump in warnings or quarantines compared with the previous run would trigger an alert. That's the next step.
+
+---
+
+## 12. Orchestration with Dagster
+
+Code: `cricket_value/orchestration/` (`assets.py`, `partitions.py`, `resources.py`, `definitions.py`). UI: `make dagster`, then open http://localhost:3000.
+
+**What an orchestrator does:** it runs pipeline steps in dependency order, on a schedule or on demand. It records every run, shows lineage, retries failures, and lets you rebuild one slice of the data (a *backfill*). Without one, you have a pile of scripts and a README saying what order to run them in.
+
+**Why Dagster, and what "software-defined assets" means.** Airflow is built around **tasks** ("run this function, then that one"). Dagster is built around the **data assets** the steps produce ("this table exists and is built from those tables"). The dependency graph *is* the lineage graph, so asking "what feeds `silver/matches`?" or "what goes stale if `raw/cricsheet_ipl` changes?" is the same question the scheduler already answers.
+
+**The asset graph:**
+```
+raw/cricsheet_ipl ─┐
+raw/cricsheet_t20i_male ─┴─> silver/match_index ─> silver/{matches, innings, deliveries,
+                                                    wickets, replacements, match_players}
+                                                    (partitioned by season) ─> reports/data_quality
+raw/cricsheet_people ─> silver/players
+raw/cricsheet_names  ─> silver/player_name_variants
+```
+
+**Making silver truly partitionable** needed a code change, not just Dagster config. The old build parsed everything and *then* split it by season, so "rebuild 2017" still read every file. Now there are two steps:
+1. **Match index:** a cheap pass mapping each match file to its season.
+2. **Season build:** parses, checks and writes *only* that season's files.
+
+A test proves that rebuilding 2017 changes 2017's files and leaves every other season's files byte-identical. That's the property that makes partitions worth having.
+
+**Assets hold no logic.** Each asset calls the same function as the `make` target (`build_season`, `build_match_index` and so on), so Dagster adds scheduling, partitions, lineage and checks, but no logic of its own. You can test the logic without Dagster, and switching orchestrator wouldn't mean rewriting it.
+
+**Design choices to be ready to defend:**
+- **Yearly time-window partitions** from 2005, rather than a fixed list: a new season appears on 1 January with no config change. `end_offset=1` includes the season still in progress.
+- **Single-run backfill policy.** Normally each partition is a separate run, which needs a background daemon to queue them. A full rebuild here takes seconds, so the asset processes every season in the selected range in **one run**: all 22 seasons in about 7 s. If one season took minutes, I'd switch to one run per partition so they run in parallel.
+- **Six tables in one multi-asset.** All six tables come out of parsing the same files, so they're materialised together and can't be selected separately. Splitting them would mean parsing every file six times.
+- **Checks are WARN, not ERROR.** Bad matches are already quarantined, so the data written is correct. A failed `contracts` check means "a match was quarantined, look at it", and a failed `reconciliation` check means "a source anomaly was flagged". Neither should stop downstream assets. An ERROR (blocking) check would suit a rule whose failure means the data written is wrong.
+- **Resources for paths and HTTP.** Tests point `ProjectPaths` at a temp directory, which is dependency injection again, the same idea as the downloader's injected HTTP client.
+- **Weekly ingest schedule, off by default,** so a fresh clone never starts downloading on its own.
+
+**Things that went wrong, and what they taught me:**
+- **`from __future__ import annotations` breaks Dagster.** Dagster reads type hints at runtime to inject `context` and resources, and that import turns hints into plain strings. It's removed from `assets.py`, with a comment explaining why.
+- **An empty-season test found a real bug.** On an empty frame, the reconciliation limits came out as booleans and the comparison crashed. Building a partition for a season with no matches (such as next year) would have failed in production.
+- **Reports must sort explicitly.** Moving to season partitions changed the order rows were read in, and the report's row order changed with it. Sorting explicitly made it deterministic again.
+
+**Dagster ↔ Airflow: the same ideas under different names**
+
+Airflow is the most common orchestrator in job ads, so be ready to translate. The underlying ideas are the same; what differs is whether the unit is a *task* (Airflow) or the *data asset* a task produces (Dagster).
+
+| Concept | Airflow | Dagster | In this project |
+|---|---|---|---|
+| A pipeline | **DAG** (a Python file defining tasks and their order) | **Asset graph**, plus **jobs** that select part of it | `ingest`, `silver_by_season` and `data_quality_report` jobs |
+| A unit of work | **Task**, an instance of an **Operator** (`PythonOperator`, `BashOperator`, …) or a `@task` function (TaskFlow API) | **Asset** (`@asset`, `@multi_asset`) or, lower level, an **op** | `silver_season` multi-asset |
+| Dependencies | Declared between tasks: `extract >> transform` | Declared between data: `deps=[...]` or function inputs | `deps=[MATCH_INDEX_KEY]` |
+| Passing data between steps | **XCom** (small values through the metadata database) | **IO managers**, or each asset reads and writes its own storage | Assets read and write Parquet themselves |
+| Data-aware scheduling | **Datasets** (Airflow 2.4+, renamed **Assets** in Airflow 3) | Native: the graph *is* assets; **automation conditions** and sensors | Not used yet (manual or scheduled) |
+| Time slice of a run | **Logical date** (formerly `execution_date`) and the data interval | **Partition key** (time window, static, dynamic or multi-dimensional) | Yearly season partitions `2005`…`2026` |
+| Rebuilding history | `airflow dags backfill` / clearing task instances | **Backfill** over a partition range, or a single-run backfill policy | All 22 seasons in one ~7 s run |
+| Waiting for something external | **Sensor** (e.g. `FileSensor`, `ExternalTaskSensor`) | **Sensor** (`@sensor`, asset sensors) | Not needed yet |
+| Timed runs | `schedule="0 6 * * 1"` on the DAG | **ScheduleDefinition** on a job | `weekly_ingest`, off by default |
+| Data quality | Extra tasks (SQL check operators, Great Expectations) or callbacks | **Asset checks** attached to the asset, shown in the UI | `contracts` and `reconciliation` checks |
+| External systems and config | **Connections**, **Hooks**, **Variables** | **Resources** (typed config classes, swappable in tests) | `ProjectPaths`, `CricsheetHttp` |
+| Limiting concurrency | **Pools**, `max_active_runs` | **Concurrency pools** and run queue limits | Not needed |
+| Where tasks execute | **Executors**: Local, Celery, Kubernetes | **Executors** plus **run launchers** (in process, multiprocess, Docker, Kubernetes) | In process, locally |
+| Always-on services | **Scheduler**, webserver, metadata DB (Postgres/MySQL) | **Daemon** (schedules, sensors, backfills), webserver, instance storage (SQLite locally, Postgres in production) | `make dagster` with SQLite in `.dagster/` |
+| Lineage | Through Datasets/Assets or OpenLineage integration | Built in: the asset graph | UI shows raw → silver → report |
+| Testing locally | Harder: needs a scheduler context, or `dag.test()` | `dg.materialize([...])` inside pytest | `tests/orchestration/test_dagster.py` |
+| dbt integration | Run dbt as a task (`BashOperator`, Cosmos) | `dagster-dbt`: every dbt model becomes an asset | Coming with the dbt marts |
+
+**One-sentence translation:** a Dagster asset is an Airflow task that also declares the data it produces. Once outputs are declared, lineage, staleness, partitioned backfills and per-table checks follow naturally, which in Airflow you build on top.
+
+**When I'd pick Airflow instead:** a team already running it, workflows that are mostly "call this API, then run that job" rather than building data tables, or a need for its very large library of provider operators.
+
+**Likely follow-up questions**
+- *"Dagster or Airflow?"* Airflow is the industry standard and very good for task scheduling. Dagster's asset model gives lineage, partition-aware backfills and data quality checks as built-in concepts, which matches what this project is meant to show. In an interview I'd say I can map either one onto the other: an asset is roughly a task plus a declared output.
+- *"How does it know what's stale?"* Each materialisation is recorded. When an upstream asset is newer than a downstream one, the UI marks the downstream as stale. Automation conditions can then rebuild it automatically, which is the next step after a manual or scheduled ingest.
+- *"What changes in production?"* Run storage moves from local SQLite in `.dagster/` to Postgres, and runs execute in containers or Kubernetes. Raw and silver move to object storage (S3 or GCS), and the schedule plus an automation condition replace manual backfills.

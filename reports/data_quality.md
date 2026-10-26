@@ -76,18 +76,18 @@ None.
 | warn | 894293 | 2015 | matches.overs_per_side_is_20 | 50 |
 | warn | 1213874 | 2020 | matches.overs_per_side_is_20 | 50 |
 | warn | 1213875 | 2020 | matches.overs_per_side_is_20 | 50 |
+| warn | 1452625 | 2024 | reconciliation.starting_xi_has_11 | Serbia: 10 |
+| warn | 1457218 | 2024 | reconciliation.target_is_first_innings_plus_one | target 169, first innings 166 |
 | warn | 1448360 | 2025 | matches.overs_per_side_is_20 | 50 |
 | warn | 1448362 | 2025 | matches.overs_per_side_is_20 | 50 |
 | warn | 1473145 | 2025 | matches.overs_per_side_is_20 | 50 |
 | warn | 1473146 | 2025 | matches.overs_per_side_is_20 | 50 |
 | warn | 1473147 | 2025 | matches.overs_per_side_is_20 | 50 |
-| warn | 1552895 | 2026 | matches.overs_per_side_is_20 | 50 |
-| warn | 1552896 | 2026 | matches.overs_per_side_is_20 | 50 |
-| warn | 1552897 | 2026 | matches.overs_per_side_is_20 | 50 |
-| warn | 1452625 | 2024 | reconciliation.starting_xi_has_11 | Serbia: 10 |
-| warn | 1457218 | 2024 | reconciliation.target_is_first_innings_plus_one | target 169, first innings 166 |
 | warn | 1481295 | 2025 | reconciliation.starting_xi_has_11 | Costa Rica: 10 |
 | warn | 1481297 | 2025 | reconciliation.starting_xi_has_11 | Costa Rica: 10 |
 | warn | 1481299 | 2025 | reconciliation.starting_xi_has_11 | Costa Rica: 10 |
 | warn | 1481301 | 2025 | reconciliation.starting_xi_has_11 | Costa Rica: 10 |
 | warn | 1495657 | 2025 | reconciliation.margin_matches_scores | Romania won; scores 178 v 133; margin 46 |
+| warn | 1552895 | 2026 | matches.overs_per_side_is_20 | 50 |
+| warn | 1552896 | 2026 | matches.overs_per_side_is_20 | 50 |
+| warn | 1552897 | 2026 | matches.overs_per_side_is_20 | 50 |
