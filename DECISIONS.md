@@ -70,14 +70,23 @@ Settled in a design review on 2026-10-26. These decisions refine [Project_brief.
 
 ## 4. Data quality
 
-- **Python contracts:** pandera checks every DataFrame before silver is written.
-- **Quarantine:** failing rows go to `quarantine_{table}` with columns `match_id`, `reason`, `rule`, `raw_ref` and `run_id`. Silver only holds rows that passed.
-- **dbt:** enforced model contracts plus tests (`unique`, `not_null`, `relationships`, `accepted_values`) on the marts.
-- **Reconciliation:** runs as Dagster asset checks, covering:
-  - deliveries summing to innings totals,
-  - 11 players per side, or 12 with an Impact Player,
-  - at most 10 wickets.
-- **Quality report:** built from the quarantine tables, for each season.
+- **Two severities:**
+  - **`error`:** the data is unusable. The **whole match** is quarantined, meaning removed from every silver table and written to `_quarantine/<table>.parquet` with a `quarantine_rules` column. One broken delivery would make every total and rating built on that match wrong, so the match is the unit.
+  - **`warn`:** the data is odd but usable. It's kept and logged.
+- **Contracts:** pandera schemas for rules within a row, plus pandas joins for rules across tables (the match exists, the innings exists, the team plays in the match).
+  - **Rule names:** every rule has one, and the same name appears in tests, the violations log and the report.
+  - **Accepted values:** Cricsheet's documented values, plus values seen in real data that the docs omit (`impact_player`, `retired out`, `retired not out`). Each addition is commented in the code.
+- **Warnings found in real data** (all kept):
+  - 11 T20Is whose header says `overs_per_side = 50`, though no over past the 20th was bowled.
+  - One super-over wide that credits runs to the batter.
+- **Reconciliation:** Cricsheet has no innings totals, so ball-by-ball runs are checked against the two independent numbers it does record, the second-innings **target** and the **winning margin**. Other checks: starting XI = 11, at most 10 dismissals (retired hurt / retired not out don't count), and at most 120 legal balls unless Cricsheet flags miscounted overs.
+  - All reconciliation checks are `warn`, because real cricket triggers some of them: Serbia and Costa Rica each really fielded 10 players.
+  - The real run flags 7 matches: five 10-player XIs, one target mismatch (1457218) and one margin mismatch (1495657).
+- **Violations log:** `_violations.parquet` has one row per failing row and rule, with `match_id`, `season`, `table`, `rule`, `severity`, `column` and `failure_case`. Whole-row rules are logged once per row, identified by the row's key.
+- **Parse failures** (files that cannot be read at all) stay separate, in `_parse_failures.parquet`.
+- **Quality report:** `make quality-report` writes `reports/data_quality.md` from those files. It covers each season and competition: matches, quarantined, deliveries, errors and warnings, plus every violation, with the raw snapshot ID at the top.
+- **Run identifier:** the raw `snapshot_id`, not a timestamp, so rebuilding the same data gives byte-identical logs.
+- **Dagster:** asset checks will wrap these same functions on Thursday.
 
 ## 5. Reference data
 
