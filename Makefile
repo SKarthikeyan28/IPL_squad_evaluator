@@ -1,4 +1,4 @@
-.PHONY: install ingest verify silver quality-report dagster test lint typecheck check
+.PHONY: install ingest verify silver quality-report reference-audit elo dagster test lint typecheck check
 
 install:
 	uv sync
@@ -14,6 +14,12 @@ silver:
 
 quality-report:
 	uv run python -m cricket_value.quality.report
+
+reference-audit:
+	uv run python -m cricket_value.reference.audit
+
+elo:
+	uv run python -m cricket_value.models.elo_baseline
 
 # Dagster UI on http://localhost:3000. Run history is kept in .dagster/ (git-ignored).
 dagster:

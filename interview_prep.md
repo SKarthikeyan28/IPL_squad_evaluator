@@ -14,6 +14,8 @@
 10. [The parser and staging (silver) tables](#10-the-parser-and-staging-silver-tables)
 11. [Data contracts, quarantine and reconciliation](#11-data-contracts-quarantine-and-reconciliation)
 12. [Orchestration with Dagster](#12-orchestration-with-dagster)
+13. [Reference data: franchises, venues and home advantage](#13-reference-data-franchises-venues-and-home-advantage)
+14. [The Elo baseline, and a negative result](#14-the-elo-baseline-and-a-negative-result)
 
 ---
 
@@ -423,3 +425,89 @@ Airflow is the most common orchestrator in job ads, so be ready to translate. Th
 - *"Dagster or Airflow?"* Airflow is the industry standard and very good for task scheduling. Dagster's asset model gives lineage, partition-aware backfills and data quality checks as built-in concepts, which matches what this project is meant to show. In an interview I'd say I can map either one onto the other: an asset is roughly a task plus a declared output.
 - *"How does it know what's stale?"* Each materialisation is recorded. When an upstream asset is newer than a downstream one, the UI marks the downstream as stale. Automation conditions can then rebuild it automatically, which is the next step after a manual or scheduled ingest.
 - *"What changes in production?"* Run storage moves from local SQLite in `.dagster/` to Postgres, and runs execute in containers or Kubernetes. Raw and silver move to object storage (S3 or GCS), and the schedule plus an automation condition replace manual backfills.
+
+---
+
+## 13. Reference data: franchises, venues and home advantage
+
+Code: `cricket_value/reference/`. Data: `config/reference/*.csv`. Report: `reports/reference_audit.md`.
+
+**What reference data is:** slowly changing facts that the source data doesn't contain but the analysis needs, such as "Delhi Daredevils and Delhi Capitals are the same franchise" or "Indore was a Kings XI home ground in 2017". In industry this is called **master data** or **reference data**, and it's usually maintained by people. That makes it the riskiest data in the pipeline, because nobody's code produces it.
+
+**How it's kept honest:**
+1. **Every row has a source link.** The loader rejects a row without one. "I looked it up" is not a source.
+2. **It's validated like data:** unique keys, every ID resolving (an alias must point to a real franchise), no overlapping season ranges, allowed values for `role`.
+3. **It's audited against the match data.** The sources say which grounds were home grounds, and the data shows where teams actually played. In a normal season the home side plays every match at its ground, so the data can *corroborate* the sources, but not replace them. The audit lists any disagreement for a person to resolve. The audit never edits the reference data, because the source stays the authority.
+
+**Rename or a new franchise?** This decides whether a team's history (and later its Elo rating) carries over.
+- **Same franchise, new name:** Daredevils → Capitals, Kings XI → Punjab Kings, Bangalore → Bengaluru, Supergiants → Supergiant. History continues.
+- **Different franchise in the same city:** Deccan Chargers → Sunrisers Hyderabad. Deccan was *expelled*, and SRH is a new franchise with new owners, so history does **not** carry over.
+- *Interview line:* "Identity is the ownership entity, not the city or the name."
+
+**Rename or a new venue?** The same question for grounds. Feroz Shah Kotla → Arun Jaitley Stadium is a rename, so it keeps the same `venue_id`. Sardar Patel Stadium → Narendra Modi Stadium was a *demolition and rebuild*, so it gets a new `venue_id`, because pitch behaviour and boundary sizes changed. That matters for venue effects later.
+
+**What the data taught me while building this.** I first planned to drop DY Patil from Deccan's 2010 home list, because semi-finals were played there. The audit flagged that Deccan had played *both* league matches at DY Patil. The source confirmed Mumbai was a Deccan home city that year, because Hyderabad hosted no matches. So a whole-season rule couldn't express "home for league games, neutral for the semi-final at the same ground". The fix was a `league_only` flag on that row, which gives the right answer for both kinds of match. The audit made me revisit an assumption, which is exactly what it's for.
+
+**Neutral seasons.**
+- **Taken from the sources:** 2009 in South Africa, the 2014 UAE leg (16–30 April), 2020 in the UAE, and 2021, where the season page says no team played at its home ground.
+- **2022 is a judgement call:** the page doesn't say "no home advantage", but every team was given the same number of matches at each of the four Maharashtra venues. It's documented as a project decision. A sensitivity check in the win model can test whether treating it differently changes anything.
+
+**Why the rule is SQL on DuckDB, not pandas.** The brief says transformations belong in dbt. Writing `match_home_status.sql` now means it becomes a dbt model without being rewritten, and this is the first use of DuckDB in the project.
+
+**Likely follow-up questions**
+- *"Why not scrape the venue tables?"* There are only about 40 rows, which change once a season. Hand-curating with sources and auditing against data is more reliable than a scraper that breaks when the page layout changes. At larger scale, such as every T20 league worldwide, I'd scrape or license the data and keep the same audit.
+- *"How would you handle a fact the sources disagree on?"* Record both sources, choose one with a written reason in the `note` column, and add a sensitivity check if it affects a model.
+- *"Is home advantage even real in the IPL?"* That's what the exploration notebook and the Elo home bonus will measure. The point of this layer is to make that measurement trustworthy.
+
+---
+
+## 14. The Elo baseline, and a negative result
+
+Code: `cricket_value/models/elo.py`, `elo_baseline.py`, `metrics.py`. Report: `reports/elo_baseline.md` (`make elo`, or the `models/elo_baseline` Dagster asset).
+
+**What Elo is.** Every team has a rating. The rating gap gives a win probability:
+
+```
+p(A wins) = 1 / (1 + 10^(−(rating_A − rating_B + home bonus) / 400))
+```
+
+After the match, both ratings move by `K × (result − p)`. An upset moves them a lot, and an expected result barely moves them. Here there are 3 parameters:
+- **K:** how fast ratings react.
+- **Home bonus:** in rating points.
+- **Season pull-back:** how far ratings shrink back to average each new season, since squads change a lot at auctions.
+
+**Why it's the first baseline:** it's the simplest model that uses *team strength*. Any player-level model has to beat it, or it isn't adding anything.
+
+**The evaluation protocol, which matters more than the model:**
+- **Rolling-origin validation.** For each test season N from 2015 to 2024, the parameters are tuned on 2009 to N−1 *only*, then season N is predicted. That's how it would have worked in real time.
+- **The leakage test proves it:** rewrite every result from 2013 onwards, and the parameters chosen for 2013 don't change.
+- **Locked seasons.** 2025–2026 are never scored, so they stay a clean test for the end of the project.
+- **Point-in-time.** Elo is processed in date order, and each forecast uses ratings from *earlier* matches only. A team never plays twice in one day, so this satisfies the "strictly earlier date" rule.
+
+**Why log loss and Brier score, not accuracy.**
+- **Proper scoring rules:** both are *proper*, meaning they are minimised by forecasting the true probability. They reward being calibrated, not just picking the right side.
+- **The problem with accuracy:** it treats a 51% forecast and a 99% forecast the same.
+- **Reference points:** a coin flip scores log loss ln 2 = 0.693 and Brier 0.25.
+- **Why the baselines are probabilities:** "home team always wins" as a hard pick has *infinite* log loss when it's wrong, so it's expressed as a probability estimated from earlier seasons.
+
+**Paired bootstrap, and why "paired".** Both models face the same matches, so resample *matches* and recompute (Elo − baseline) on each resample. Easy and hard matches affect both models equally and largely cancel, which gives a much narrower interval than comparing two separate intervals. A gain only counts if the whole 95% interval is below zero.
+
+**The result, stated honestly:** across 633 test matches, **Elo doesn't beat a coin flip.**
+- **Log loss:** 0.6963 against 0.6931. The difference is +0.0032, with a 95% interval of [−0.0082, +0.0144].
+- **The other baselines:** the home-rate and toss-rate baselines don't beat the coin flip either.
+- **What the tuner is saying:** it chose a tiny K (about 4–8), meaning "past results barely predict the next match", plus a home bonus of about 30–45 points, which is about 54–56% for the home side.
+
+**Why the result is plausible:**
+- **Squads reset.** IPL squads change heavily every year through auctions, and the playing XI changes match to match.
+- **T20 is high-variance.** One over can swing a game.
+- **Even rosters.** A salary cap and an auction keep teams close in strength.
+- **Implication:** team-level history is a weak signal. Any edge has to come from *who is actually playing*, which is exactly what the player-rating model in Phases 2–3 is for. This negative result is the motivation for the rest of the project.
+
+**A trap I caught:** the first grid offered K only down to 8, and the tuner chose 8 almost every season. **A parameter stuck at the edge of the grid means the grid is wrong, not that the edge is the answer.** After extending K down to 2, the choices sit inside the grid (4–12), and the conclusion held.
+
+**Why tuned Elo can do *worse* than a coin flip out of sample.** Tuning picks the parameters that best fit the earlier seasons, including their noise. When the true signal is tiny, the noise that was fitted costs a little out of sample. That's overfitting with only 3 parameters, and it shows why out-of-sample scoring is non-negotiable.
+
+**Likely follow-up questions**
+- *"Isn't a model that loses to a coin flip a failure?"* It's a *measured* result with an interval, and it changes the plan: the scope rule "beat Elo before the price model" is now a weak bar, so the win model must beat the coin flip and home-rate baselines by an interval that excludes zero, or explain why not. Reporting it is the rigour the project is meant to show.
+- *"Why not margin-of-victory Elo?"* That was a deliberate early choice: win/loss only. Margins in T20 depend on whether a team batted first (runs) or chased (wickets), so they aren't directly comparable. It's a reasonable extension to test later, against the same locked protocol.
+- *"How many matches would you need to detect a real 1–2% edge?"* Many more than 633. The interval is about ±0.01 in log loss, roughly the size of a real but small edge. That's why the brief insists on intervals rather than single numbers.

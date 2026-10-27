@@ -7,6 +7,7 @@ import dagster as dg
 from cricket_value.orchestration.assets import (
     CricsheetHttp,
     data_quality_report,
+    elo_baseline,
     match_index,
     raw_assets,
     register_assets,
@@ -41,7 +42,14 @@ weekly_ingest = dg.ScheduleDefinition(
 )
 
 defs = dg.Definitions(
-    assets=[*raw_assets, match_index, silver_season, *register_assets, data_quality_report],
+    assets=[
+        *raw_assets,
+        match_index,
+        silver_season,
+        *register_assets,
+        data_quality_report,
+        elo_baseline,
+    ],
     jobs=[ingest_job, silver_job, report_job],
     schedules=[weekly_ingest],
     resources={"paths": ProjectPaths(), "http": CricsheetHttp()},
