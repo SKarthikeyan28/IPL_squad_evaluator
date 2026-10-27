@@ -15,6 +15,7 @@
 11. [Data contracts, quarantine and reconciliation](#11-data-contracts-quarantine-and-reconciliation)
 12. [Orchestration with Dagster](#12-orchestration-with-dagster)
 13. [Reference data: franchises, venues and home advantage](#13-reference-data-franchises-venues-and-home-advantage)
+14. [The Elo baseline, and a negative result](#14-the-elo-baseline-and-a-negative-result)
 
 ---
 
@@ -457,3 +458,56 @@ Code: `cricket_value/reference/`. Data: `config/reference/*.csv`. Report: `repor
 - *"Why not scrape the venue tables?"* There are only about 40 rows, which change once a season. Hand-curating with sources and auditing against data is more reliable than a scraper that breaks when the page layout changes. At larger scale, such as every T20 league worldwide, I'd scrape or license the data and keep the same audit.
 - *"How would you handle a fact the sources disagree on?"* Record both sources, choose one with a written reason in the `note` column, and add a sensitivity check if it affects a model.
 - *"Is home advantage even real in the IPL?"* That's what the exploration notebook and the Elo home bonus will measure. The point of this layer is to make that measurement trustworthy.
+
+---
+
+## 14. The Elo baseline, and a negative result
+
+Code: `cricket_value/models/elo.py`, `elo_baseline.py`, `metrics.py`. Report: `reports/elo_baseline.md` (`make elo`, or the `models/elo_baseline` Dagster asset).
+
+**What Elo is.** Every team has a rating. The rating gap gives a win probability:
+
+```
+p(A wins) = 1 / (1 + 10^(−(rating_A − rating_B + home bonus) / 400))
+```
+
+After the match, both ratings move by `K × (result − p)`. An upset moves them a lot, and an expected result barely moves them. Here there are 3 parameters:
+- **K:** how fast ratings react.
+- **Home bonus:** in rating points.
+- **Season pull-back:** how far ratings shrink back to average each new season, since squads change a lot at auctions.
+
+**Why it's the first baseline:** it's the simplest model that uses *team strength*. Any player-level model has to beat it, or it isn't adding anything.
+
+**The evaluation protocol, which matters more than the model:**
+- **Rolling-origin validation.** For each test season N from 2015 to 2024, the parameters are tuned on 2009 to N−1 *only*, then season N is predicted. That's how it would have worked in real time.
+- **The leakage test proves it:** rewrite every result from 2013 onwards, and the parameters chosen for 2013 don't change.
+- **Locked seasons.** 2025–2026 are never scored, so they stay a clean test for the end of the project.
+- **Point-in-time.** Elo is processed in date order, and each forecast uses ratings from *earlier* matches only. A team never plays twice in one day, so this satisfies the "strictly earlier date" rule.
+
+**Why log loss and Brier score, not accuracy.**
+- **Proper scoring rules:** both are *proper*, meaning they are minimised by forecasting the true probability. They reward being calibrated, not just picking the right side.
+- **The problem with accuracy:** it treats a 51% forecast and a 99% forecast the same.
+- **Reference points:** a coin flip scores log loss ln 2 = 0.693 and Brier 0.25.
+- **Why the baselines are probabilities:** "home team always wins" as a hard pick has *infinite* log loss when it's wrong, so it's expressed as a probability estimated from earlier seasons.
+
+**Paired bootstrap, and why "paired".** Both models face the same matches, so resample *matches* and recompute (Elo − baseline) on each resample. Easy and hard matches affect both models equally and largely cancel, which gives a much narrower interval than comparing two separate intervals. A gain only counts if the whole 95% interval is below zero.
+
+**The result, stated honestly:** across 633 test matches, **Elo doesn't beat a coin flip.**
+- **Log loss:** 0.6963 against 0.6931. The difference is +0.0032, with a 95% interval of [−0.0082, +0.0144].
+- **The other baselines:** the home-rate and toss-rate baselines don't beat the coin flip either.
+- **What the tuner is saying:** it chose a tiny K (about 4–8), meaning "past results barely predict the next match", plus a home bonus of about 30–45 points, which is about 54–56% for the home side.
+
+**Why the result is plausible:**
+- **Squads reset.** IPL squads change heavily every year through auctions, and the playing XI changes match to match.
+- **T20 is high-variance.** One over can swing a game.
+- **Even rosters.** A salary cap and an auction keep teams close in strength.
+- **Implication:** team-level history is a weak signal. Any edge has to come from *who is actually playing*, which is exactly what the player-rating model in Phases 2–3 is for. This negative result is the motivation for the rest of the project.
+
+**A trap I caught:** the first grid offered K only down to 8, and the tuner chose 8 almost every season. **A parameter stuck at the edge of the grid means the grid is wrong, not that the edge is the answer.** After extending K down to 2, the choices sit inside the grid (4–12), and the conclusion held.
+
+**Why tuned Elo can do *worse* than a coin flip out of sample.** Tuning picks the parameters that best fit the earlier seasons, including their noise. When the true signal is tiny, the noise that was fitted costs a little out of sample. That's overfitting with only 3 parameters, and it shows why out-of-sample scoring is non-negotiable.
+
+**Likely follow-up questions**
+- *"Isn't a model that loses to a coin flip a failure?"* It's a *measured* result with an interval, and it changes the plan: the scope rule "beat Elo before the price model" is now a weak bar, so the win model must beat the coin flip and home-rate baselines by an interval that excludes zero, or explain why not. Reporting it is the rigour the project is meant to show.
+- *"Why not margin-of-victory Elo?"* That was a deliberate early choice: win/loss only. Margins in T20 depend on whether a team batted first (runs) or chased (wickets), so they aren't directly comparable. It's a reasonable extension to test later, against the same locked protocol.
+- *"How many matches would you need to detect a real 1–2% edge?"* Many more than 633. The interval is about ±0.01 in log loss, roughly the size of a real but small edge. That's why the brief insists on intervals rather than single numbers.

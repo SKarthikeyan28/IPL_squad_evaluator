@@ -170,6 +170,17 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
   - K and the pull-back fraction are tuned on development seasons.
   - IPL matches only.
 - **Baselines:** home team always wins, toss winner always wins, and Elo.
+  - **Probabilistic baselines:** a hard "always wins" pick has infinite log loss when it's wrong, so the baselines are expressed as probabilities estimated from earlier seasons:
+    - `coin_flip` (0.5);
+    - `home_rate` (the home-win rate, and 0.5 at neutral grounds);
+    - `toss_rate` (the toss-winner win rate).
+  - **Elo grid:** K ∈ {2, 4, 6, 8, 12, 16, 20, 24, 32, 40}, home bonus ∈ {0, 15, 30, 45, 60, 90} points, and pull-back ∈ {0, 0.2, ⅓, 0.5, 0.75}. Elo is tuned by log loss on 2009 to N−1 for each test season N, with 2008 as burn-in. K was first offered only down to 8, and the tuner picked the smallest value, so the grid was extended. The values chosen now sit inside the grid (K = 4–12).
+  - **Accuracy:** a 0.5 forecast earns half credit.
+- **Elo result (`make elo` → `reports/elo_baseline.md`, 633 test matches, 2015–2024):** Elo does **not** beat a coin flip.
+  - **Log loss:** Elo 0.6963 against 0.6931 for the coin flip. Elo − coin is +0.0032, with a 95% interval of [−0.0082, +0.0144].
+  - **Other baselines:** none of the simple baselines beats the coin flip either.
+  - **What the tuner chose:** a small K (≈4–8, so past results barely move ratings) and a 30–45 point home bonus, which means about 54–56% for the home side.
+  - **Implication for the scope rule:** "beat Elo before the price model" is a weak bar on its own. The win model must beat the **coin flip and `home_rate`** by a paired interval that excludes zero, or the write-up has to explain why it can't.
 - **Models:** logistic regression, then LightGBM.
 - **LightGBM tuning:** monotone constraints on strength-difference features. Hyperparameters are chosen once from a fixed grid of about 20 settings by rolling development log loss. The number of trees is fixed, with no early stopping.
 - **Validation:**
