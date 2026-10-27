@@ -18,6 +18,7 @@
 14. [The Elo baseline, and a negative result](#14-the-elo-baseline-and-a-negative-result)
 15. [Reproducible rebuilds: `make rebuild`](#15-reproducible-rebuilds-make-rebuild)
 16. [Exploration: the toss, chasing, venues and home advantage](#16-exploration-the-toss-chasing-venues-and-home-advantage)
+17. [The dbt warehouse: star schema, contracts and tests](#17-the-dbt-warehouse-star-schema-contracts-and-tests)
 
 ---
 
@@ -582,3 +583,60 @@ Notebook: `notebooks/01_exploration.ipynb` (`make notebook`). Logic: `cricket_va
 - *"Is 54.5% for chasing a big edge?"* It's modest: about 4–5 points above a coin flip. It's real because the interval excludes 50%, and it's the kind of small, honest feature a calibrated model should use. It won't dominate on its own.
 - *"Why not test home advantage per season?"* You can, but each season's interval spans about 25 points. Testing 15 seasons separately invites false positives (multiple comparisons). The pooled estimate answers the question with the data available.
 - *"What would you do next with venues?"* Model first-innings totals with season and venue together (fixed or random effects), so each ground's effect is measured against its own era.
+
+---
+
+## 17. The dbt warehouse: star schema, contracts and tests
+
+Code: `dbt/` (models, tests, macros), `cricket_value/warehouse/dbt.py`, `tests/warehouse/`. Commands: `make dbt`, `make dbt-docs`.
+
+**Layering, and why each layer exists:**
+- **Sources:** silver Parquet, read *in place* by DuckDB's `read_parquet` with hive partitioning. No copy is made, and `season` comes from the folder name.
+- **Seeds:** the CSVs in `config/reference/` *are* the seeds (`seed-paths: ["../config/reference"]`), so there's one copy of every reference fact, read by both Python and dbt.
+- **Staging (`stg_*`, views):** one model per source, with only type fixes. Everything downstream depends on staging, never on raw sources, so a source change is fixed in one place.
+- **Intermediate (`int_*`, views):** reusable business logic: the home/away rule, and the mapping of names to `team_id` and `venue_id`.
+- **Marts (tables with enforced contracts):** the star schema the ratings, models and API read.
+
+**The star schema, with grains:**
+
+| Table | Grain | Keys |
+|---|---|---|
+| `fact_delivery` | one row per ball (wides and no-balls included) | `delivery_key`; foreign keys to player ×3, team ×2, venue, season |
+| `fact_team_match` | one row per team per match | `team_match_key`; foreign keys to team ×2, venue, season |
+| `dim_player` | person | `player_id` (Cricsheet register) |
+| `dim_team` | franchise or nation | `team_id` |
+| `dim_venue` | ground | `venue_id` |
+| `dim_season` | competition season | `season_key` |
+
+Two fact tables sharing *conformed* dimensions makes this a small **fact constellation (galaxy)**. That's the answer to "star or galaxy?".
+
+**Data contracts in dbt.** `contract: enforced` makes every mart column's type part of its interface. If a model returns an extra column, a missing one, or the wrong type, the build fails *before* the table is replaced. That's the SQL-side version of the pandera contracts on silver.
+
+**Tests, generic and singular:**
+- **Generic** (in YAML): `not_null`, `unique`, `relationships` (every foreign key resolves to its dimension) and `accepted_values`. These are the referential integrity the database can't enforce.
+- **Singular** (a SQL file that returns failing rows):
+  - every silver ball appears exactly once in `fact_delivery`, which catches join fan-out or loss;
+  - Impact Player substitutions occur only in rule seasons, so sourced reference data and match data agree;
+  - home status is symmetric (home ↔ away, or neutral ↔ neutral);
+  - each match has exactly two team rows.
+
+**Derived measures with cricket definitions,** worth knowing in an interview:
+- **`runs_conceded`** = runs off the bat + wides + no-balls. Byes and leg-byes aren't the bowler's fault.
+- **`bowler_wicket`** = bowled, caught, caught and bowled, lbw, stumped or hit wicket. Run-outs and retirements aren't credited to the bowler.
+- **`batter_dismissed`** = the *striker* was out. A non-striker run out doesn't count against the striker.
+- **`phase`** = overs 1–6 powerplay, 7–15 middle, 16–20 death.
+
+**Making dbt testable from Python.** Paths reach dbt through the environment variables `CV_SILVER_DIR` and `CV_WAREHOUSE`, read in `profiles.yml` and the source definition. `run_dbt()` sets them and invokes `dbtRunner`, so a pytest test builds the whole warehouse from 15 fixture matches in a temp folder. CI therefore runs dbt without the real data.
+
+**One rule in two places, guarded by a test.** The home/away rule is now a dbt model, but the Elo baseline and the notebook still call the Python/DuckDB version. Until they read the warehouse, a test asserts both give identical results. Duplication with a guard is acceptable as a migration step; silent duplication isn't.
+
+**Things the data and tools taught me:**
+- **Cricsheet withholds Afghanistan's men's matches.** I found it because the Full Member check showed 0 Afghanistan T20Is. That's a source gap, not a bug, so it's documented, and the ratings must say Afghan players have no T20I data.
+- **Most T20Is are now between associate nations:** only 31% of T20I balls are Full Member against Full Member. The Full Member filter is a big modelling choice, not a footnote.
+- **Don't let a lagging register break the build.** `dim_player` falls back to the scorecard name and flags it, instead of failing the whole build on one missing name.
+- **DuckDB allows one configuration per file per process.** dbt's adapter keeps the warehouse open in-process, so a test opening it read-only fails. The tests connect with the same settings dbt uses.
+
+**Likely follow-up questions**
+- *"Why are staging models views and marts tables?"* Views cost nothing to build and always reflect silver. Marts are read many times by ratings, models and the API, so they're materialised once per build.
+- *"How would this run in production?"* The same models on Snowflake or BigQuery, with only the adapter changed. Sources become external or staged tables, and marts could become incremental on season partitions.
+- *"Where's the lineage graph?"* `make dbt-docs` serves dbt's docs site with the full DAG, from sources and seeds to marts, and it goes into the README in Phase 6.

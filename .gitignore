@@ -17,3 +17,8 @@ data/raw/*
 .dagster/
 .DS_Store
 .env
+
+# dbt build output (warehouse lives in data/, git-ignored above)
+dbt/target/
+dbt/logs/
+dbt/.user.yml

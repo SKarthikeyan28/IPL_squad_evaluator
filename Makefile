@@ -1,4 +1,4 @@
-.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook dagster test lint typecheck check
+.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook dbt dbt-docs dagster test lint typecheck check
 
 install:
 	uv sync
@@ -25,6 +25,16 @@ elo:
 # same raw snapshot. Accept a deliberate change with: make rebuild ARGS=--update-baseline
 rebuild:
 	uv run python -m cricket_value.build.rebuild $(ARGS)
+
+# Build the warehouse (data/warehouse.duckdb): seeds, staging views, marts, then every
+# dbt test and contract. Reads silver in place, so run `make silver` first.
+DBT_FLAGS = --project-dir dbt --profiles-dir dbt
+dbt:
+	uv run dbt build $(DBT_FLAGS)
+
+# Lineage graph and column docs at http://localhost:8080
+dbt-docs:
+	uv run dbt docs generate $(DBT_FLAGS) && uv run dbt docs serve $(DBT_FLAGS)
 
 # Re-run the exploration notebook in place and refresh reports/figures/
 notebook:

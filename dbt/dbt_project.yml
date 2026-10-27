@@ -1,0 +1,46 @@
+# Silver Parquet (written by Python) -> staging views -> marts in data/warehouse.duckdb.
+# Run from the repo root: make dbt  (uses --project-dir dbt --profiles-dir dbt)
+name: cricket_value
+version: "0.1.0"
+config-version: 2
+profile: cricket_value
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+# The reference CSVs stay in config/reference (one source of truth, also read by Python)
+seed-paths: ["../config/reference"]
+
+models:
+  cricket_value:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+      +contract:
+        enforced: true
+
+seeds:
+  cricket_value:
+    franchises:
+      +column_types:
+        first_season: integer
+        last_season: integer
+    home_venues:
+      +column_types:
+        first_season: integer
+        last_season: integer
+        league_only: boolean
+    rule_changes:
+      +column_types:
+        first_season: integer
+        last_season: integer
+    neutral_periods:
+      +column_types:
+        start_date: date
+        end_date: date
+    full_member_nations:
+      +column_types:
+        full_member_from: date
