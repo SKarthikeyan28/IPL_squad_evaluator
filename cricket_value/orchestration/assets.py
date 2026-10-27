@@ -18,6 +18,7 @@ quarantined, so a failed check is a signal to investigate rather than a broken p
 # No `from __future__ import annotations` here: Dagster reads the real type hints to
 # inject `context` and resources, and string annotations hide them.
 from collections.abc import Iterator
+from pathlib import Path
 
 import dagster as dg
 import httpx
@@ -37,6 +38,7 @@ from cricket_value.ingest.silver import (
     read_match_index,
     write_match_index,
 )
+from cricket_value.models.elo_baseline import build_elo_baseline
 from cricket_value.orchestration.partitions import season_partitions
 from cricket_value.orchestration.resources import REPO_ROOT, ProjectPaths
 from cricket_value.quality.report import render_markdown
@@ -258,3 +260,39 @@ def data_quality_report(paths: ProjectPaths) -> dg.MaterializeResult:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render_markdown(paths.silver_dir, snapshot))
     return dg.MaterializeResult(metadata={"path": str(out), "snapshot_id": snapshot})
+
+
+# -- models ---------------------------------------------------------------------------
+
+
+@dg.asset(
+    key=dg.AssetKey(["models", "elo_baseline"]),
+    deps=[SILVER_KEYS["matches"]],
+    group_name="models",
+    description="Team Elo baseline: rolling-origin tuning and scoring on 2015-2024 "
+    "against coin-flip, home-rate and toss-rate baselines (reports/elo_baseline.md).",
+    kinds={"python"},
+)
+def elo_baseline(paths: ProjectPaths) -> dg.MaterializeResult:
+    result = build_elo_baseline(
+        paths.silver_dir,
+        Path(paths.config_root) / "reference",
+        Path(paths.root) / "data" / "models",
+        paths.reports_dir,
+    )
+    pooled = {row["model"]: row for row in result.pooled.to_dict("records")}
+    vs_coin = next(
+        c
+        for c in result.comparisons.to_dict("records")
+        if c["vs"] == "coin_flip" and c["metric"] == "log_loss"
+    )
+    return dg.MaterializeResult(
+        metadata={
+            "test_matches": int(pooled["elo"]["n"]),
+            "elo_log_loss": float(pooled["elo"]["log_loss"]),
+            "coin_flip_log_loss": float(pooled["coin_flip"]["log_loss"]),
+            "elo_minus_coin_log_loss": float(vs_coin["elo_minus_baseline"]),
+            "ci_95": f"[{vs_coin['ci_low']:+.4f}, {vs_coin['ci_high']:+.4f}]",
+            "pooled": dg.MetadataValue.md(result.pooled.round(4).to_markdown(index=False)),
+        }
+    )
