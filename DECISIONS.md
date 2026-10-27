@@ -159,6 +159,20 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
 ## 8. Win model
 
 - **Prediction moment:** just after the toss, when both XIs are known.
+- **What the exploration notebook found** (`notebooks/01_exploration.ipynb`, 1,234 decided IPL matches, 95% Wilson intervals):
+  - **Toss winner wins:** 51.4% [48.6, 54.2], so no clear effect.
+  - **Toss winners fielding first:** 66% overall, and about 80% every season since 2016.
+  - **Side batting second wins:** 54.5% [51.7, 57.2], a modest real edge.
+  - **Home side wins:** 53.1% [49.9, 56.3] over 915 matches with a home side. That's borderline, and consistent with Elo's tuned home bonus.
+  - **Scoring:** the average first-innings total rose from about 171 (2022) to about 196 (2026), starting with the 2023 Impact Player rule.
+- **Features that follow from these findings:**
+  - **Use `bats_second`, not `won_toss`.** Who chases is known at the toss and carries the measured edge. Who won the toss doesn't.
+  - **Venue effects must be estimated within an era,** or with season as a covariate. Raw venue averages are confounded by scoring inflation: the high average at Narendra Modi Stadium is partly the 2023+ era.
+  - **Home advantage is a single shared effect,** not a separate one for each team. Per-franchise home rates mix home advantage with team strength and are far too noisy, at n ≈ 7–108 per franchise.
+- **Notebook rules:**
+  - **No logic in notebooks.** All logic is in tested `cricket_value/analysis/explore.py`, and chart styling is in `charts.py`.
+  - **Committed with outputs.** The notebook is checked in with its outputs, and `make notebook` re-executes it and refreshes `reports/figures/`.
+  - **Summary table is computed,** so the notebook can't drift from the data.
 - **Starting XI:** `info.players` minus anyone who came in as a `match` replacement.
   - The Impact Player actually used is stored as an event but is **never a model input**.
   - The `impact_player_era` flag captures the rule change.

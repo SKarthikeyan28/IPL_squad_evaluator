@@ -1,4 +1,4 @@
-.PHONY: install ingest verify silver quality-report reference-audit elo rebuild dagster test lint typecheck check
+.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook dagster test lint typecheck check
 
 install:
 	uv sync
@@ -25,6 +25,10 @@ elo:
 # same raw snapshot. Accept a deliberate change with: make rebuild ARGS=--update-baseline
 rebuild:
 	uv run python -m cricket_value.build.rebuild $(ARGS)
+
+# Re-run the exploration notebook in place and refresh reports/figures/
+notebook:
+	cd notebooks && uv run jupyter nbconvert --to notebook --execute --inplace 01_exploration.ipynb
 
 # Dagster UI on http://localhost:3000. Run history is kept in .dagster/ (git-ignored).
 dagster:
