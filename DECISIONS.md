@@ -102,12 +102,27 @@ Settled in a design review on 2026-10-26. These decisions refine [Project_brief.
 
 ## 5. Reference data
 
-- **Teams:** a canonical team is the **franchise ownership entity**, held in `team_aliases` with a source link for each mapping.
-  - Renames of the same franchise: Daredevils → Capitals, Kings XI → Punjab Kings.
-  - Separate franchises: Deccan Chargers and Sunrisers, and Gujarat Lions and Gujarat Titans.
-- **Venues:** `venue_aliases` maps each venue to one canonical ID, seeded from the Cricsheet venue register.
-- **Home games:** `is_home` comes from a versioned config of home venues per team per season, with sources. It is three-valued (`home`, `away`, `neutral`) and covers 2009 in South Africa, the UAE seasons (2014, 2020, 2021) and 2022 (Maharashtra and Gujarat only).
-- **Season rules:** purse, squad and overseas limits, retention and RTM rules, and the Impact Player rule. They are researched by Claude and kept in `config/` with a source link for every value. Anything not confirmed is marked unconfirmed, never guessed.
+All reference facts live in `config/reference/` as version-controlled CSVs. Every row has a `source_url`, and `load_reference` rejects the files if any key is duplicated, any ID doesn't resolve, or any source is missing.
+
+- **Franchises (`franchises.csv`, `team_aliases.csv`):** a canonical team is the **franchise ownership entity**. 19 Cricsheet team names map to 15 franchises.
+  - **Renames of the same franchise:** Delhi Daredevils → Delhi Capitals (December 2018), Kings XI Punjab → Punjab Kings (17 February 2021), Royal Challengers Bangalore → Bengaluru (2024), and Rising Pune Supergiants → Supergiant (2017).
+  - **Separate franchises:** Deccan Chargers and Sunrisers Hyderabad (Deccan was expelled and SRH is a new franchise), and Gujarat Lions and Gujarat Titans. Pune Warriors, Kochi Tuskers, Rising Pune Supergiant and Gujarat Lions are defunct.
+- **Venues (`venues.csv`, `venue_aliases.csv`):** 60 IPL venue names map to 37 grounds. Cricsheet's venue register covers only 272 venues worldwide and missed most IPL names, so the aliases are curated.
+  - **Renames that keep a `venue_id`:** Feroz Shah Kotla → Arun Jaitley Stadium (12 September 2019), Subrata Roy Sahara Stadium → MCA Stadium Pune, and Sheikh Zayed Stadium / Zayed Cricket Stadium.
+  - **Rebuild with a new `venue_id`:** **Narendra Modi Stadium** replaced Sardar Patel Stadium, which was demolished in 2015. It is a separate venue because a rebuilt ground has new pitches and dimensions.
+  - **T20I venues:** not curated yet. They aren't needed for IPL home advantage.
+- **Home venues (`home_venues.csv`):** each franchise's grounds for each range of seasons, with a role of `primary`, `secondary` or `relocated`. Each row is checked against the Wikipedia season page's venue table and "(H)" markers.
+  - **`league_only`:** a row marked `league_only` counts only for league matches. In 2010 Deccan played its home league games at DY Patil, which then hosted the semi-finals as a neutral venue.
+- **Neutral periods (`neutral_periods.csv`):** 2009 (South Africa), the 2014 UAE leg (16–30 April), 2020 (UAE) and 2021 (no team at its home ground, then the UAE).
+  - **2022 is a project decision:** Wikipedia doesn't say "no home advantage", but every team got the same number of matches at each of the four Maharashtra venues.
+- **Home status rule (`match_home_status.sql`, run on DuckDB):**
+  - Any match in a neutral period is neutral.
+  - Otherwise a team is at home if the venue is on its franchise's home list for that season. Exactly one team at home gives home/away; none or both gives neutral.
+  - Playoffs follow the same rule, so a playoff at a team's ground is a home game.
+  - The rule is written in SQL so it can become a dbt model unchanged.
+- **Audit (`make reference-audit` → `reports/reference_audit.md`):** compares the sourced home lists with where teams actually played. It flags a ground where one franchise played every league match but which isn't listed, a listed ground that no match used, and unmapped names.
+  - **Real data:** no findings. Home games per franchise come to 7–8 per normal season.
+- **Season rules (purse, squad and overseas limits, retention, RTM, Impact Player):** still to be researched for Phase 5, kept in `config/` with a source for every value. Anything not confirmed is marked unconfirmed, never guessed.
 
 ## 6. Player attributes
 

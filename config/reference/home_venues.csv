@@ -1,0 +1,44 @@
+franchise_id,venue_id,first_season,last_season,role,league_only,source_url,note
+csk,chepauk,2008,,primary,false,https://en.wikipedia.org/wiki/Chennai_Super_Kings,
+csk,jsca,2014,2014,secondary,false,https://en.wikipedia.org/wiki/2014_Indian_Premier_League,Chennai removed as a venue in 2014; CSK home match in Ranchi
+csk,mca_pune,2018,2018,relocated,false,https://en.wikipedia.org/wiki/2018_Indian_Premier_League,Six home matches moved from Chennai to Pune (Kaveri protests)
+mi,dy_patil,2008,2008,secondary,false,https://en.wikipedia.org/wiki/2008_Indian_Premier_League,Home matches marked (H) at DY Patil
+mi,wankhede,2008,,primary,false,https://en.wikipedia.org/wiki/Mumbai_Indians,
+mi,brabourne,2010,2010,primary,false,https://en.wikipedia.org/wiki/2010_Indian_Premier_League,
+mi,aca_vdca,2016,2016,relocated,false,https://en.wikipedia.org/wiki/2016_Indian_Premier_League,May home matches moved out of Maharashtra (drought ruling)
+kkr,eden_gardens,2008,,primary,false,https://en.wikipedia.org/wiki/Kolkata_Knight_Riders,
+kkr,jsca,2013,2013,secondary,false,https://en.wikipedia.org/wiki/2013_Indian_Premier_League,From the venues table; both Ranchi matches involve KKR in the data
+rcb,chinnaswamy,2008,,primary,false,https://en.wikipedia.org/wiki/Royal_Challengers_Bengaluru,
+rcb,raipur,2026,2026,secondary,false,https://en.wikipedia.org/wiki/2026_Indian_Premier_League,Secondary home venue for two matches
+rr,sawai_mansingh,2008,,primary,false,https://en.wikipedia.org/wiki/Rajasthan_Royals,
+rr,sardar_patel,2010,2010,secondary,false,https://en.wikipedia.org/wiki/2010_Indian_Premier_League,Shared some home matches with Jaipur
+rr,sardar_patel,2014,2015,relocated,false,https://en.wikipedia.org/wiki/2014_Indian_Premier_League,Moved from Jaipur after the RCA suspension; 2015 venue table also lists Ahmedabad for RR
+rr,brabourne,2015,2015,secondary,false,https://en.wikipedia.org/wiki/2015_Indian_Premier_League,
+rr,barsapara,2023,,secondary,false,https://en.wikipedia.org/wiki/2023_Indian_Premier_League,Also used in 2024 to 2026
+dc,arun_jaitley,2008,,primary,false,https://en.wikipedia.org/wiki/Delhi_Capitals,
+dc,raipur,2013,2016,secondary,false,https://en.wikipedia.org/wiki/Delhi_Capitals,Listed as second home ground; no matches there after 2016
+dc,aca_vdca,2024,2025,secondary,false,https://en.wikipedia.org/wiki/2024_Indian_Premier_League,First two home games in 2024 and two in 2025; dropped for 2026
+pbks,pca_mohali,2008,2023,primary,false,https://en.wikipedia.org/wiki/Punjab_Kings,
+pbks,hpca,2010,2013,secondary,false,https://en.wikipedia.org/wiki/2010_Indian_Premier_League,Also listed in 2011 to 2013 venue tables
+pbks,barabati,2014,2014,secondary,false,https://en.wikipedia.org/wiki/2014_Indian_Premier_League,
+pbks,mca_pune,2015,2015,secondary,false,https://en.wikipedia.org/wiki/2015_Indian_Premier_League,
+pbks,holkar,2017,2018,secondary,false,https://en.wikipedia.org/wiki/2017_Indian_Premier_League,In 2018 four home games were in Indore and three in Mohali
+pbks,hpca,2023,,secondary,false,https://en.wikipedia.org/wiki/2023_Indian_Premier_League,Also used in 2024 to 2026
+pbks,mullanpur,2024,,primary,false,https://en.wikipedia.org/wiki/2024_Indian_Premier_League,Punjab Kings page lists 2021 to present; first IPL match there in 2024
+deccan,rajiv_gandhi,2008,2012,primary,false,https://en.wikipedia.org/wiki/Sunrisers_Hyderabad,No matches in Hyderabad in 2010
+deccan,barabati,2010,2012,secondary,false,https://en.wikipedia.org/wiki/2010_Indian_Premier_League,Also a secondary venue in 2012
+deccan,dy_patil,2010,2010,relocated,true,https://en.wikipedia.org/wiki/2010_Indian_Premier_League,Home league games in Mumbai (Hyderabad hosted none in 2010); the semi-finals held here were neutral
+deccan,vca_jamtha,2010,2010,secondary,false,https://en.wikipedia.org/wiki/2010_Indian_Premier_League,
+deccan,aca_vdca,2012,2012,secondary,false,https://en.wikipedia.org/wiki/2012_Indian_Premier_League,
+srh,rajiv_gandhi,2013,,primary,false,https://en.wikipedia.org/wiki/Sunrisers_Hyderabad,
+srh,aca_vdca,2015,2015,secondary,false,https://en.wikipedia.org/wiki/Sunrisers_Hyderabad,First three home games of 2015
+pwi,dy_patil,2011,2011,primary,false,https://en.wikipedia.org/wiki/2011_Indian_Premier_League,
+pwi,mca_pune,2012,2013,primary,false,https://en.wikipedia.org/wiki/2012_Indian_Premier_League,
+ktk,holkar,2011,2011,secondary,false,https://en.wikipedia.org/wiki/2011_Indian_Premier_League,
+ktk,nehru_kochi,2011,2011,primary,false,https://en.wikipedia.org/wiki/2011_Indian_Premier_League,
+rps,aca_vdca,2016,2016,relocated,false,https://en.wikipedia.org/wiki/Rising_Pune_Supergiant,Three home games moved to Visakhapatnam (drought ruling)
+rps,mca_pune,2016,2017,primary,false,https://en.wikipedia.org/wiki/Rising_Pune_Supergiant,
+gl,green_park,2016,2017,secondary,false,https://en.wikipedia.org/wiki/2016_Indian_Premier_League,
+gl,saurashtra,2016,2017,primary,false,https://en.wikipedia.org/wiki/2016_Indian_Premier_League,
+gt,narendra_modi,2022,,primary,false,https://en.wikipedia.org/wiki/Gujarat_Titans,No home matches in 2022 (neutral season)
+lsg,ekana,2022,,primary,false,https://en.wikipedia.org/wiki/Lucknow_Super_Giants,No home matches in 2022 (neutral season)
