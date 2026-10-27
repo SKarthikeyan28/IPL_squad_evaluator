@@ -31,6 +31,9 @@ packages = ["cricket_value"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Explicit list: pytest's default also skips any folder named "build", which once hid
+# a whole test package without warning
+norecursedirs = [".*", "__pycache__", "fixtures"]
 addopts = "-ra --strict-markers"
 
 [tool.ruff]

@@ -78,7 +78,15 @@ Settled in a design review on 2026-10-26. These decisions refine [Project_brief.
   - **Checks:** a `contracts` check on each silver table and a `reconciliation` check on `silver/matches`, both WARN severity. Quarantine already protects the data, so a failed check means "look at this", not "the pipeline broke".
   - **Schedule:** a weekly ingest schedule, off by default.
   - **Assets hold no logic:** they call the same functions as the `make` targets.
-- **Rebuild check:** `make rebuild` is verified by **row count plus a content hash of each table's sorted rows**, not by file bytes.
+- **Rebuild check (`make rebuild`, ~17 s):**
+  1. Re-hash every raw file against the manifest, offline. Any altered file stops the build.
+  2. Delete `data/silver` and `data/models`.
+  3. Rebuild silver, the registers, the quality report, the reference audit and the Elo baseline, using the same functions Dagster runs.
+  4. Fingerprint all 22 outputs.
+  - **The fingerprint:** row count, columns, and SHA-256 over the *sorted per-row hashes*. That makes it independent of row order and of how rows are split into files, while duplicate rows still count. Parquet bytes are never compared, and Markdown reports are hashed byte for byte.
+  - **Baselines:** fingerprints are stored per raw snapshot in `data/build/fingerprints/<snapshot_id>.json`. The first build of a snapshot stores them, later builds must match exactly or the command fails and names each output that changed, and new raw data starts a new baseline. `make rebuild ARGS=--update-baseline` accepts a deliberate change.
+  - **Real data:** three consecutive rebuilds matched. The regenerated reports are byte-identical to the committed ones.
+  - **Tests:** a test builds the fixtures twice into separate folders and requires identical fingerprints, so CI checks determinism without the real data.
 
 ## 4. Data quality
 

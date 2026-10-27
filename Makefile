@@ -1,4 +1,4 @@
-.PHONY: install ingest verify silver quality-report reference-audit elo dagster test lint typecheck check
+.PHONY: install ingest verify silver quality-report reference-audit elo rebuild dagster test lint typecheck check
 
 install:
 	uv sync
@@ -20,6 +20,11 @@ reference-audit:
 
 elo:
 	uv run python -m cricket_value.models.elo_baseline
+
+# Rebuild every derived output from raw files and check it matches the last build of the
+# same raw snapshot. Accept a deliberate change with: make rebuild ARGS=--update-baseline
+rebuild:
+	uv run python -m cricket_value.build.rebuild $(ARGS)
 
 # Dagster UI on http://localhost:3000. Run history is kept in .dagster/ (git-ignored).
 dagster:
