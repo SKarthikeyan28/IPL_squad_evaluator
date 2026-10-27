@@ -14,6 +14,7 @@
 10. [The parser and staging (silver) tables](#10-the-parser-and-staging-silver-tables)
 11. [Data contracts, quarantine and reconciliation](#11-data-contracts-quarantine-and-reconciliation)
 12. [Orchestration with Dagster](#12-orchestration-with-dagster)
+13. [Reference data: franchises, venues and home advantage](#13-reference-data-franchises-venues-and-home-advantage)
 
 ---
 
@@ -423,3 +424,36 @@ Airflow is the most common orchestrator in job ads, so be ready to translate. Th
 - *"Dagster or Airflow?"* Airflow is the industry standard and very good for task scheduling. Dagster's asset model gives lineage, partition-aware backfills and data quality checks as built-in concepts, which matches what this project is meant to show. In an interview I'd say I can map either one onto the other: an asset is roughly a task plus a declared output.
 - *"How does it know what's stale?"* Each materialisation is recorded. When an upstream asset is newer than a downstream one, the UI marks the downstream as stale. Automation conditions can then rebuild it automatically, which is the next step after a manual or scheduled ingest.
 - *"What changes in production?"* Run storage moves from local SQLite in `.dagster/` to Postgres, and runs execute in containers or Kubernetes. Raw and silver move to object storage (S3 or GCS), and the schedule plus an automation condition replace manual backfills.
+
+---
+
+## 13. Reference data: franchises, venues and home advantage
+
+Code: `cricket_value/reference/`. Data: `config/reference/*.csv`. Report: `reports/reference_audit.md`.
+
+**What reference data is:** slowly changing facts that the source data doesn't contain but the analysis needs, such as "Delhi Daredevils and Delhi Capitals are the same franchise" or "Indore was a Kings XI home ground in 2017". In industry this is called **master data** or **reference data**, and it's usually maintained by people. That makes it the riskiest data in the pipeline, because nobody's code produces it.
+
+**How it's kept honest:**
+1. **Every row has a source link.** The loader rejects a row without one. "I looked it up" is not a source.
+2. **It's validated like data:** unique keys, every ID resolving (an alias must point to a real franchise), no overlapping season ranges, allowed values for `role`.
+3. **It's audited against the match data.** The sources say which grounds were home grounds, and the data shows where teams actually played. In a normal season the home side plays every match at its ground, so the data can *corroborate* the sources, but not replace them. The audit lists any disagreement for a person to resolve. The audit never edits the reference data, because the source stays the authority.
+
+**Rename or a new franchise?** This decides whether a team's history (and later its Elo rating) carries over.
+- **Same franchise, new name:** Daredevils → Capitals, Kings XI → Punjab Kings, Bangalore → Bengaluru, Supergiants → Supergiant. History continues.
+- **Different franchise in the same city:** Deccan Chargers → Sunrisers Hyderabad. Deccan was *expelled*, and SRH is a new franchise with new owners, so history does **not** carry over.
+- *Interview line:* "Identity is the ownership entity, not the city or the name."
+
+**Rename or a new venue?** The same question for grounds. Feroz Shah Kotla → Arun Jaitley Stadium is a rename, so it keeps the same `venue_id`. Sardar Patel Stadium → Narendra Modi Stadium was a *demolition and rebuild*, so it gets a new `venue_id`, because pitch behaviour and boundary sizes changed. That matters for venue effects later.
+
+**What the data taught me while building this.** I first planned to drop DY Patil from Deccan's 2010 home list, because semi-finals were played there. The audit flagged that Deccan had played *both* league matches at DY Patil. The source confirmed Mumbai was a Deccan home city that year, because Hyderabad hosted no matches. So a whole-season rule couldn't express "home for league games, neutral for the semi-final at the same ground". The fix was a `league_only` flag on that row, which gives the right answer for both kinds of match. The audit made me revisit an assumption, which is exactly what it's for.
+
+**Neutral seasons.**
+- **Taken from the sources:** 2009 in South Africa, the 2014 UAE leg (16–30 April), 2020 in the UAE, and 2021, where the season page says no team played at its home ground.
+- **2022 is a judgement call:** the page doesn't say "no home advantage", but every team was given the same number of matches at each of the four Maharashtra venues. It's documented as a project decision. A sensitivity check in the win model can test whether treating it differently changes anything.
+
+**Why the rule is SQL on DuckDB, not pandas.** The brief says transformations belong in dbt. Writing `match_home_status.sql` now means it becomes a dbt model without being rewritten, and this is the first use of DuckDB in the project.
+
+**Likely follow-up questions**
+- *"Why not scrape the venue tables?"* There are only about 40 rows, which change once a season. Hand-curating with sources and auditing against data is more reliable than a scraper that breaks when the page layout changes. At larger scale, such as every T20 league worldwide, I'd scrape or license the data and keep the same audit.
+- *"How would you handle a fact the sources disagree on?"* Record both sources, choose one with a written reason in the `note` column, and add a sensitivity check if it affects a model.
+- *"Is home advantage even real in the IPL?"* That's what the exploration notebook and the Elo home bonus will measure. The point of this layer is to make that measurement trustworthy.
