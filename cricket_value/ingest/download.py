@@ -120,12 +120,7 @@ class Downloader:
 
     def verify(self) -> list[str]:
         """Re-hash every stored download. Returns the paths that are missing or altered."""
-        bad = []
-        for row in self.manifest.archives().itertuples():
-            path = self.raw_dir / str(row.path)
-            if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != row.sha256:
-                bad.append(str(row.path))
-        return bad
+        return verify_raw(self.raw_dir, self.manifest)
 
     def _record_members(
         self, source: Source, members: dict[str, str], archive_path: str, fetched_at: str
@@ -153,6 +148,17 @@ class Downloader:
             )
         self.manifest.add_files(records)
         return new_files, changed_files
+
+
+def verify_raw(raw_dir: Path, manifest: Manifest) -> list[str]:
+    """Re-hash every stored download against the manifest. No network needed.
+    Returns the paths that are missing or altered."""
+    bad = []
+    for row in manifest.archives().itertuples():
+        path = raw_dir / str(row.path)
+        if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != row.sha256:
+            bad.append(str(row.path))
+    return bad
 
 
 def _hash_json_members(body: bytes) -> dict[str, str]:

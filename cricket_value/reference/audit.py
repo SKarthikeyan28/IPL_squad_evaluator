@@ -126,7 +126,8 @@ def render_markdown(findings: pd.DataFrame, counts: pd.DataFrame) -> str:
             "| Severity | Check | Season | Franchise | Venue | Detail |",
             "|---|---|---|---|---|---|",
         ]
-        for r in findings.fillna("").itertuples(index=False):
+        # object dtype first: numeric columns can't hold "" as a fill value
+        for r in findings.astype(object).fillna("").itertuples(index=False):
             cells = [r.severity, r.check, r.season, r.franchise_id, r.venue_id, r.detail]
             lines.append("| " + " | ".join(str(c) for c in cells) + " |")
     lines += ["", "## Home games per franchise and season", "", counts.to_markdown(), ""]

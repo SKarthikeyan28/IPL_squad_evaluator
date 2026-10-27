@@ -16,6 +16,7 @@
 12. [Orchestration with Dagster](#12-orchestration-with-dagster)
 13. [Reference data: franchises, venues and home advantage](#13-reference-data-franchises-venues-and-home-advantage)
 14. [The Elo baseline, and a negative result](#14-the-elo-baseline-and-a-negative-result)
+15. [Reproducible rebuilds: `make rebuild`](#15-reproducible-rebuilds-make-rebuild)
 
 ---
 
@@ -511,3 +512,36 @@ After the match, both ratings move by `K × (result − p)`. An upset moves them
 - *"Isn't a model that loses to a coin flip a failure?"* It's a *measured* result with an interval, and it changes the plan: the scope rule "beat Elo before the price model" is now a weak bar, so the win model must beat the coin flip and home-rate baselines by an interval that excludes zero, or explain why not. Reporting it is the rigour the project is meant to show.
 - *"Why not margin-of-victory Elo?"* That was a deliberate early choice: win/loss only. Margins in T20 depend on whether a team batted first (runs) or chased (wickets), so they aren't directly comparable. It's a reasonable extension to test later, against the same locked protocol.
 - *"How many matches would you need to detect a real 1–2% edge?"* Many more than 633. The interval is about ±0.01 in log loss, roughly the size of a real but small edge. That's why the brief insists on intervals rather than single numbers.
+
+---
+
+## 15. Reproducible rebuilds: `make rebuild`
+
+Code: `cricket_value/build/rebuild.py`, `fingerprint.py`. Command: `make rebuild`.
+
+**The claim it proves:** every derived table can be deleted and rebuilt from the raw files, and comes out *identical*. That's the practical meaning of "raw is the source of truth" and "every step is idempotent".
+
+**What it does:**
+1. **Verifies the raw layer first.** Every raw file is re-hashed against the manifest, offline. If raw data has changed, nothing downstream can be trusted, so the build stops.
+2. **Deletes all derived data,** so nothing left over from an earlier build can make the result look reproducible when it isn't.
+3. **Rebuilds everything:** silver, the registers, the quality report, the reference audit and the Elo baseline. It uses the *same functions* Dagster runs, so this checks the real pipeline, not a copy.
+4. **Fingerprints the 22 outputs** and compares them with the last build of the *same raw snapshot*.
+
+**Why not compare file checksums?** Parquet files with identical contents can differ in bytes, depending on the writer version and how rows are grouped. The brief's "same checksums" has to mean the same *content*. So each output's fingerprint is:
+- **row count;**
+- **column names;**
+- **SHA-256 of the sorted per-row hashes.** Sorting makes it independent of row order and file layout. Duplicates still count, and any changed value, added row or renamed column changes it.
+
+The reports are deterministic Markdown, so they're hashed byte for byte.
+
+**Why fingerprints are kept per raw snapshot.** When Cricsheet publishes new matches, the outputs *should* change. Comparing against "the last build" would raise a false alarm. Keying the stored fingerprints by `snapshot_id` asks the right question: *for the same input, is the output the same?* New raw data starts a new baseline, and `--update-baseline` records a deliberate code change, such as a parser fix.
+
+**Result on real data:** three consecutive full rebuilds took about 17 s each and matched. The regenerated reports are byte-identical to the versions committed to git.
+
+**In CI:** a test builds the fixture data twice into separate folders and requires identical fingerprints. That checks determinism on every push without needing the real data.
+
+**A bug the tests nearly hid.** pytest's default `norecursedirs` skips any folder named `build`. My new tests in `tests/build/` passed when I ran that folder directly, but `make check` silently skipped all 11 of them. I caught it because the total test count didn't go up. The folder is now `tests/rebuild`, and `norecursedirs` is set explicitly so this can't recur. *Lesson:* check that new tests actually ran, not just that the suite is green.
+
+**Likely follow-up questions**
+- *"What makes a pipeline non-deterministic?"* Unordered output (set or dict iteration, `groupby` without sorting, parallel writes), timestamps or run IDs written into the data, unseeded randomness (here the bootstrap is seeded), floating-point sums in a different order, and unpinned library versions (here `uv.lock` pins them).
+- *"How would you do this at scale?"* Compare table-level checksums in the warehouse (e.g. `HASH_AGG` in Snowflake, or summing row hashes in BigQuery), run it on a sample or per partition, and keep data versions with a table format like Iceberg or Delta so two snapshots can be compared directly.
