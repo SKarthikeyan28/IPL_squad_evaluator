@@ -17,6 +17,7 @@
 13. [Reference data: franchises, venues and home advantage](#13-reference-data-franchises-venues-and-home-advantage)
 14. [The Elo baseline, and a negative result](#14-the-elo-baseline-and-a-negative-result)
 15. [Reproducible rebuilds: `make rebuild`](#15-reproducible-rebuilds-make-rebuild)
+16. [Exploration: the toss, chasing, venues and home advantage](#16-exploration-the-toss-chasing-venues-and-home-advantage)
 
 ---
 
@@ -545,3 +546,39 @@ The reports are deterministic Markdown, so they're hashed byte for byte.
 **Likely follow-up questions**
 - *"What makes a pipeline non-deterministic?"* Unordered output (set or dict iteration, `groupby` without sorting, parallel writes), timestamps or run IDs written into the data, unseeded randomness (here the bootstrap is seeded), floating-point sums in a different order, and unpinned library versions (here `uv.lock` pins them).
 - *"How would you do this at scale?"* Compare table-level checksums in the warehouse (e.g. `HASH_AGG` in Snowflake, or summing row hashes in BigQuery), run it on a sample or per partition, and keep data versions with a table format like Iceberg or Delta so two snapshots can be compared directly.
+
+---
+
+## 16. Exploration: the toss, chasing, venues and home advantage
+
+Notebook: `notebooks/01_exploration.ipynb` (`make notebook`). Logic: `cricket_value/analysis/explore.py`. Figures: `reports/figures/`.
+
+**"No logic in notebooks."** Notebooks are hard to test, review and reuse, and their cells can run out of order. Every number here comes from a tested function. The notebook only calls those functions and draws charts. It's committed with outputs so a reviewer can read it on GitHub, and `make notebook` re-executes it from a clean kernel.
+
+**Wilson intervals, not ±1.96·SE.** With 60–74 matches a season, a "normal approximation" interval can spill past 0% or 100%, and it behaves badly near extremes. The Wilson score interval stays inside [0, 1] and has better coverage for small n. *Rule used throughout:* a result counts as an effect only if its 95% interval excludes 50%.
+
+**Findings (1,234 decided IPL matches):**
+
+| Question | Rate | 95% interval | Verdict |
+|---|---|---|---|
+| Toss winner chooses to field | 66.4% | 63.7–68.9% | above 50% |
+| Toss winner wins | 51.4% | 48.6–54.2% | no clear effect |
+| Side batting second wins | 54.5% | 51.7–57.2% | above 50% |
+| Home side wins (915 matches with a home side) | 53.1% | 49.9–56.3% | no clear effect |
+
+**How to talk about them:**
+- **The toss is a red herring; the choice it enables isn't.** Captains have learned to bowl first (about 80% since 2016), and the chasing side does win slightly more often. So the model uses **who bats second** (known at the toss), not who won the toss.
+- **Home advantage is small,** borderline at 53%. That agrees with Elo's tuned home bonus of about 54–56%. Together with the Elo result, it says team-level signals are weak, which is the case for player-level ratings.
+- **Confounding, explained with a real example.** Narendra Modi Stadium has the highest average first-innings total, about 185. But scoring jumped from about 171 to about 196 after the 2023 Impact Player rule, and most of that ground's matches are from 2023 onwards. The raw venue average mixes the ground with the era, so venue effects must be estimated *with season in the model*.
+- **Per-team home rates mix home advantage with strength.** CSK wins about 66% at home, but CSK wins a lot everywhere. Separating the two needs home-versus-away comparisons or a model with team strength, which is what Elo's home bonus does.
+
+**Charts that respect the noise.** Every rate is drawn as a point with its 95% interval, a 50% reference line, and the all-seasons rate as a shaded band. A bar chart of 19 season rates would invite reading noise as trends.
+
+**Bugs found while building this:**
+- **Hive partition columns collide in joins.** Silver `innings` carries its own `season` partition column, so merging it with `matches` produced `season_x` and `season_y`, and the notebook crashed. The unit test's hand-made frame lacked that column. Fix: make test frames match the real table's shape, reproduce the failure in the test first, then fix the code.
+- **pandas 3 stores missing strings as NaN.** NaN is truthy, so `"win" if winner else ...` silently labelled no-results as wins in a test helper. Use `notna()`, never truthiness, on pandas values.
+
+**Likely follow-up questions**
+- *"Is 54.5% for chasing a big edge?"* It's modest: about 4–5 points above a coin flip. It's real because the interval excludes 50%, and it's the kind of small, honest feature a calibrated model should use. It won't dominate on its own.
+- *"Why not test home advantage per season?"* You can, but each season's interval spans about 25 points. Testing 15 seasons separately invites false positives (multiple comparisons). The pooled estimate answers the question with the data available.
+- *"What would you do next with venues?"* Model first-innings totals with season and venue together (fixed or random effects), so each ground's effect is measured against its own era.
