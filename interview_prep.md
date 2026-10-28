@@ -21,6 +21,7 @@
 17. [The dbt warehouse: star schema, contracts and tests](#17-the-dbt-warehouse-star-schema-contracts-and-tests)
 18. [Kinds of data warehouse, and where DuckDB fits](#18-kinds-of-data-warehouse-and-where-duckdb-fits)
 19. [Point-in-time player ratings](#19-point-in-time-player-ratings)
+20. [Tuning the ratings: decay and T20I weight](#20-tuning-the-ratings-decay-and-t20i-weight)
 
 ---
 
@@ -218,6 +219,7 @@ The heavy table-to-table transforms are in SQL (dbt), by design. pandas handles 
 | **Attribute pre-fill** (`ingest/`) | Turns Wikidata/DBpedia SPARQL results into a DataFrame and combines them with the overrides CSV | `combine_first`, deduplication, SCD2 interval building |
 | **ML training sets** (`models/`, `value/`) | Loads marts from DuckDB (`.df()`), builds the matrix of both match orientations, and splits the rolling folds | Vectorised feature differences, time-based splits |
 | **Bootstrap and evaluation** (`models/`) | Paired bootstrap over matches, and results tables | `groupby`, `sample`, `pivot_table` |
+| **Ratings tuning** (`ratings/tuning.py`) | Scores 226k balls per grid point, aggregates log-likelihood per match for the bootstrap, and pivots the grid into the report | `groupby`/`agg` with named aggregations, `MultiIndex` `reindex` lookups, `pivot`, `to_markdown` |
 | **Exploration notebook** (`notebooks/`) | Matches per season, toss effect, venue and home effects | `groupby`/`agg`, plotting |
 
 **How to say it in an interview:** "I used pandas where Python is the right tool: parsing nested JSON, validation, messy CSV cleaning, entity resolution and ML feature preparation. Set-based transforms between tables went to SQL in dbt, because they're easier to test, document and trace there."
@@ -699,7 +701,7 @@ Code: `dbt/models/intermediate/ratings/`, `dbt/macros/ratings.sql`, `dbt/models/
 4. **Priors and shrinkage:** `rating = (x + k·m) / (n + k)`.
 
 **Why the cumulative trick:** the decay weight for a ball on day `t` used on day `D` is `e^(−λ(D − t)) = e^(−λD) · e^(λt)`. The `e^(λt)` part doesn't depend on D, so it can be summed once, as a running total. Without the trick, every (player, date) pair would need its own sum over the whole history, which is quadratic. With it, the work is one window function plus one join.
-- **Overflow:** days are counted from 2005-01-01, so `e^(λt)` stays small. With a 730-day half-life it's about `e^7.5`.
+- **Overflow:** days are counted from 2005-01-01, so `e^(λt)` stays small. With the tuned 1,095-day half-life it's about `e^5`.
 
 **Point in time for priors too.** It's easy to make the ratings point in time but estimate the role average from *all* data, which leaks the future through the prior. Here, each calendar year's priors use only evidence from before 1 January of that year. A test checks both.
 
@@ -722,6 +724,66 @@ Code: `dbt/models/intermediate/ratings/`, `dbt/macros/ratings.sql`, `dbt/models/
 
 **Likely follow-up questions**
 - *"Why `ASOF JOIN` and not a window over every match?"* An as-of join is the standard tool for "latest value before time t" (finance uses it for prices at trade time). It's one join instead of a correlated subquery.
-- *"Why are T20Is down-weighted?"* Full Member T20Is are a different, often stronger, standard than the IPL, and they're there to fill gaps in IPL history. The weight (0.5 for now) gets tuned on next-ball log-likelihood rather than picked by hand.
+- *"Why are T20Is down-weighted?"* Full Member T20Is are a different, often stronger, standard than the IPL, and they're there to fill gaps in IPL history. The weight was tuned on next-ball log-likelihood rather than picked by hand, and came out at 0.5 (section 20).
 - *"Why 1 January for priors, not the day before each match?"* Priors estimated daily would cost a full method-of-moments pass per date for almost no change. Yearly priors are still strictly point in time.
 - *"What's the weakness?"* Method-of-moments `k` is noisy from year to year, and roles are a coarse share of balls. A hierarchical Bayesian model fitted jointly would do both better, at much higher cost.
+
+---
+
+## 20. Tuning the ratings: decay and T20I weight
+
+Code: `cricket_value/ratings/tuning.py`, `tests/ratings/test_tuning.py`, `tests/warehouse/test_ratings_tuning.py`. Report: `reports/ratings_tuning.md` (`make tune-ratings`).
+
+**The two knobs:**
+- **Half-life:** how fast old evidence fades. A ball from 1,095 days ago counts half as much as one from today.
+- **T20I weight:** how much a Full Member T20I ball counts, compared with an IPL ball.
+
+Both were guesses (730 days and 0.5) until this step.
+
+**What log-likelihood is.** A model gives each possible outcome a probability. The *likelihood* is the probability it gave to what actually happened. Multiplied over many balls, that number gets tiny, so you take logs and add them up instead. **Log loss** is the negative average: lower is better, and it's measured in *nats* (natural-log units).
+- **Proper scoring:** like the Elo report's log loss, it's a proper scoring rule. It's minimised by forecasting the true probabilities, so it rewards calibrated probabilities, not just "right side of 50%".
+- **The penalty for confidence:** saying 1% for something that happens costs a lot (−ln 0.01 ≈ 4.6). Saying 50% costs 0.69.
+
+**What gets predicted.** Every ball faced in IPL 2010–2024 (226,193 balls) gets two predictions, from that day's ratings of the batter and the bowler for that phase:
+1. **Out or not.** The batter's dismissal rate is the base, adjusted on the log-odds scale by how much better or worse than average the bowler is: `logit p = logit p_bat + logit p_bowl − logit(average bowler)`. This is the "log5" idea from baseball: an average bowler leaves the batter's rate unchanged.
+2. **How many runs (0–6).** The predicted mean is `batter's runs per ball × bowler's runs per ball ÷ average bowler's`.
+
+**Why not just MSE on runs?** Runs per ball are lumpy: 0, 1, 4 and 6 are common, and 3 and 5 are rare. A Gaussian likelihood (which is exactly MSE) puts probability on 2.7 runs and treats a 6 as a huge error, so it scores the model on outliers.
+- **The approach instead:** a real probability for each run value. Start from the league's 0–6 distribution for that phase, from earlier seasons only. **Exponentially tilt** it: multiply each `q_k` by `e^(θk)` and renormalise, with θ found by bisection so the mean matches the prediction.
+- **Why tilting:** it's the distribution closest to the league's (in KL divergence) with the right mean. It keeps the league's shape, with 3s and 5s rare, and moves only the level.
+- **A bonus:** now both parts are log-probabilities of discrete outcomes, so they add into one criterion, the joint log-likelihood of (out?, runs). A Gaussian density and a probability would be in different units.
+
+**Why tune on next-ball prediction, not on the win model?**
+- **Separation of concerns.** The ratings' job is to describe players. If they were tuned to whatever helps the win model, any win-model change would move the ratings, and the ratings would be fitted to one consumer, when the value model and the price model use them too.
+- **More data points.** There are about 226,000 balls, against about 900 development matches. With so few matches, the win model's log loss is too noisy to tell 730 days from 1,095. The Elo baseline showed how wide match-level intervals are.
+- **Less overfitting, and no double use.** The win model is tuned on development seasons too. Tuning the ratings on it as well would spend the same matches twice and make its scores look better than they'd be live.
+
+**Why 2025–2026 stay locked.** They are the final test, evaluated once at the end. If their outcomes picked the half-life, that test would no longer be out of sample, and its score would be optimistic. The loader raises an error if asked for those seasons.
+- **One subtlety:** the dbt build does include 2025–26 balls as *evidence*. But every rating used for a 2010–2024 ball is dated before 2025, by the point-in-time rule, so the locked seasons can't affect any score.
+
+**Point in time again.** Each ball is scored with ratings dated strictly before its match, so every prediction is genuinely out of sample, with no train/test split to get wrong. The league distribution used for runs comes from *earlier* seasons, and a unit test checks that.
+
+**Results:**
+- **Chosen:** half-life 1,095 days (3 years) and T20I weight 0.5. Both are **interior**: there are grid points on both sides of each, so the grid didn't need extending.
+- **The surface is flat near the optimum.** The four neighbours are 0.05–0.07 nats per 1,000 balls worse, and every paired bootstrap interval includes 0. The chosen point wins 64% of bootstrap resamples. I'd say: "anything from 2 to 6 years and 0.25–0.75 is as good as anything else; 3 years and 0.5 is the centre of that region."
+- **What the data does rule out:**
+  - half-lives of a year or less;
+  - ignoring T20Is entirely (weight 0 is clearly worse);
+  - counting a T20I ball the same as an IPL ball (weight 1 is slightly worse).
+- **The ratings add little per ball:** 5.6 nats per 1,000 balls over predicting every ball from league averages, about 0.4%. That's expected, because one ball is mostly luck. Almost all of the gain is in runs, not dismissals, which matches section 19's finding that wicket rate is mostly noise.
+
+**The edge-of-grid lesson (from Elo).** When the Elo tuner's best K was the smallest value offered, the right conclusion was that the grid was wrong, not that the edge was the answer. So the report checks whether the choice is on an edge and says "extend the grid" if it is. Here it isn't. One edge is natural: a T20I weight below 0 means nothing, so a choice of 0 would have been a real answer, not a grid problem.
+
+**A finding: short half-lives break the priors.** The rule "a player needs 60 balls to help estimate a prior" counts *decayed* balls. On 1 January, eight months after an IPL, with a 90-day half-life nobody has 60, so no priors and no ratings exist.
+- **How it's handled:** unrated balls are scored as league-only, which is honestly what that pipeline knows, and every grid point is scored on the same balls. The report shows the coverage of each point.
+- **Why it doesn't change the answer:** the chosen point and its four neighbours rate 100% of balls.
+- **What I'd change if short half-lives mattered:** the floor should count effective balls, not decayed ones.
+
+**Where pandas is used:** the scoring and aggregation. Per grid point, it joins about 226k balls to their ratings (via DuckDB `.df()`), looks up each ball's league distribution with a `MultiIndex` `reindex`, and sums log-likelihoods per match with `groupby().agg()`. Grid tables are made with `pivot` and `to_markdown`. The heavy maths (tilting, bootstrap) is vectorised numpy on the same frames.
+
+**Likely follow-up questions**
+- *"Why bootstrap over matches, not balls?"* Balls in a match share players, pitch and conditions, so they aren't independent. Resampling balls would make the intervals too narrow.
+- *"Isn't a 0.07 nats per 1,000 balls difference meaningless?"* Yes, that's the point of reporting it. The choice is the centre of a flat region, so the win model won't be sensitive to it.
+- *"Why grid search and not an optimiser?"* There are two parameters, each run is a 3-second dbt rebuild, and a grid shows the whole surface: how flat it is, and where it breaks. A gradient method would give one number and hide that.
+- *"Isn't tuning on 2010–2024 and then using the ratings for the win model on the same seasons leakage?"* The two parameters are global, and they're chosen by a different target (next ball, not match result). Strictly, a rolling tune (only seasons before each test season) would be cleaner, like Elo's. Given how flat the surface is, the choice would barely move. That's a reasonable follow-up if the win model's gains are marginal.
+- *"Why is the bowler measured against the average bowler, not the average batter?"* The two stats aren't the same event: run outs count against the batter but not the bowler, and bowlers are charged wides and no-balls. Comparing each rating with its own mean keeps the adjustment unbiased.

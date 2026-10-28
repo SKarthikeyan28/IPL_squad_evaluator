@@ -186,7 +186,7 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
     - **Batting:** runs and dismissals, over balls faced (wides excluded).
     - **Bowling:** runs conceded (×6 gives economy), wickets credited to the bowler, and dot balls, over legal balls. Runs and wickets off wides and no-balls still count against the bowler.
   - **Evidence:** IPL balls weigh 1 and Full Member T20I balls weigh `rating_t20i_weight`. Super overs are excluded.
-  - **Placeholder parameters:** half-life 730 days and T20I weight 0.5, until tuning. Both are dbt vars in `dbt/dbt_project.yml`.
+  - **Parameters:** half-life 1,095 days and T20I weight 0.5, both tuned (see **Tuning** below). Both are dbt vars in `dbt/dbt_project.yml`. The numbers in this section's sanity checks and in interview_prep §19 were measured at the earlier placeholder of 730 days.
   - **Role:** derived as of each date from the decayed share of balls bowled among balls faced plus bowled.
     - Below 0.2 is a batter, above 0.7 a bowler, and anything between an all-rounder.
     - Under 60 decayed balls is `unknown`.
@@ -206,6 +206,27 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
     - **Top of each list:** death economy, Bumrah and Narine; powerplay dot balls, Bhuvneshwar, Hazlewood and Boult; powerplay scoring, Suryavanshi, Abhishek Sharma and Head; lowest middle-overs dismissal rate, Klaasen, Iyer, Rahul, Gill and Kohli.
     - **Small samples:** players under 30 balls make up 75–100% of the extremes of raw rates, but only about their base rate (0–50%) of the extremes of ratings.
 - **Tuning:** the decay rate and T20I weight are tuned on **next-ball log-likelihood** (dismissal and runs outcomes) over the development IPL seasons. They are not tuned on the win model.
+- **Tuned (`make tune-ratings` → `reports/ratings_tuning.md`, 2026-10-28):** code in `cricket_value/ratings/tuning.py`.
+  - **Scored balls:** 226,193 balls faced in IPL 2010–2024, with no super overs and no wides. 2008–2009 are burn-in. **2025–2026 are locked:** the loader refuses those seasons.
+  - **Inputs:** each ball's batter and bowler ratings for its phase, as of its match date. They use only earlier matches, so every score is out of sample.
+  - **Combining batter and bowler:** the batter's rate is the base, and the bowler moves it by his ratio to the average bowler (that year's pooled `any`-role prior mean).
+    - **Dismissal:** `logit p = logit p_bat + logit p_bowl − logit m_bowl`, which is log5 in odds form. The bowler is measured against his own stat's mean because the stats differ: run outs count against the batter only, and bowlers are charged extras.
+    - **Runs:** `μ = μ_bat · μ_bowl / m_bowl`.
+    - An average bowler leaves the batter's rate unchanged.
+  - **Runs likelihood:** runs per ball are lumpy (0, 1, 4 and 6 are common), so a Gaussian, which is the same as MSE, is rejected. Each ball's distribution over 0–6 runs (a 7 counts as 6) is the league's distribution for that phase from earlier seasons, **exponentially tilted** (`p_k ∝ q_k·e^(θk)`) until its mean is μ. That is the distribution closest to the league's, in KL divergence, with the predicted mean.
+  - **Criterion:** log loss per ball = −(log p(dismissal outcome) + log p(runs)). That is the joint log-likelihood, if the two outcomes are independent given the ratings. Both terms are log-probabilities of discrete outcomes, so they're in the same units and simply add. Each component is reported separately too.
+  - **Grid:** half-life {90, 180, 365, 540, 730, 1095, 1460, 2190} days × T20I weight {0, 0.25, 0.5, 0.75, 1}. Each point re-runs `int_rating_evidence+` with `--vars` in a scratch warehouse, so `data/warehouse.duckdb` is never touched.
+  - **Chosen: 1,095 days and 0.5, which is interior** on both axes, so the grid didn't need extending.
+    - **Log loss per ball:** 1.50280 (dismissal 0.19159, runs 1.31121).
+    - **League only (no player information):** 1.50843. The ratings save 5.6 nats per 1,000 balls, about 0.4%. Single balls are mostly noise.
+    - **Most of the signal is in runs:** runs gain 5.1 nats per 1,000 balls over league-only and dismissals 0.6. This fits wicket rate being mostly noise.
+  - **The surface is flat near the optimum.**
+    - **Neighbours:** 730 and 1,460 days, and weights 0.25 and 0.75, are each 0.05–0.07 nats per 1,000 balls worse. Every paired bootstrap interval (over matches) includes 0.
+    - **Bootstrap wins:** the chosen point wins 64% of 1,000 resamples.
+    - **The flat region:** everything from 730 to 2,190 days at weight 0.25–0.75 is within 0.2 nats per 1,000 balls. The old placeholder (730, 0.5) is 0.07 worse, which is within noise.
+    - **What the data does rule out:** half-lives of a year or less (0.6–5.6 worse), and T20I weight 0 (1.2–1.6 worse from 540 days up). T20I evidence helps, but it's worth less than IPL evidence: weight 1 is 0.2 worse.
+  - **Short half-lives can't rate every ball.** The prior floor counts *decayed* balls, so on 1 January (eight months after an IPL) few players keep 60 of them. At 90 days, no year has priors; at 365 days, 84–99% of balls are rated. Unrated balls are scored as league-only, so every point is scored on the same balls. This penalises short half-lives partly for missing priors, not only for forgetting skill. It doesn't affect the choice: every point from 540 days up, at weight 0.25 or more, rates 97–100% of balls. If short half-lives are ever wanted, the floor should count undecayed or effective balls instead.
+  - **Overflow bound:** `e^(2λ·day)` (for `n2`) overflows a double once 2λ·day passes about 709. With days running to about 8,000 (2026), that happens below a half-life of about 16 days, so a much shorter grid would need a later reference date.
 
 ## 8. Win model
 
