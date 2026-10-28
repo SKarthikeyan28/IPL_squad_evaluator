@@ -2,41 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import duckdb
 import pandas as pd
-import pytest
 
-from cricket_value.ingest.manifest import Manifest
-from cricket_value.ingest.silver import build_registers, build_silver
 from cricket_value.reference.home import match_home_status
 from cricket_value.reference.reference import load_reference
-from cricket_value.warehouse.dbt import REPO, run_dbt
-from tests.rebuild.test_rebuild import stage_root
-
-COMPETITIONS = {"cricsheet_ipl": "ipl", "cricsheet_t20i_male": "t20i"}
-
-
-@pytest.fixture(scope="module")
-def warehouse(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    """Silver built from the 15 fixture matches, then `dbt build` into a fresh warehouse."""
-    root = tmp_path_factory.mktemp("wh")
-    paths = stage_root(root)
-    manifest = Manifest(paths.raw / "manifest")
-    build_silver(paths.raw, manifest, paths.silver, COMPETITIONS)
-    build_registers(paths.raw, manifest, paths.silver)
-
-    db = root / "warehouse.duckdb"
-    result = run_dbt(["build"], silver_dir=paths.silver, warehouse=db, work_dir=root / "dbt")
-    assert result.success, result.exception
-    return paths.silver, db
-
-
-def query(db: Path, sql: str) -> pd.DataFrame:
-    # Same (default) settings as dbt's connection: DuckDB refuses a second connection to
-    # one file in the same process with a different configuration, such as read_only
-    with duckdb.connect(str(db)) as con:
-        out: pd.DataFrame = con.sql(sql).df()
-    return out
+from cricket_value.warehouse.dbt import REPO
+from tests.warehouse.conftest import query
 
 
 def test_dbt_build_passes_every_test_and_contract(warehouse: tuple[Path, Path]) -> None:

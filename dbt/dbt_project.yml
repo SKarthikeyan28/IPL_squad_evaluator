@@ -11,12 +11,31 @@ macro-paths: ["macros"]
 # The reference CSVs stay in config/reference (one source of truth, also read by Python)
 seed-paths: ["../config/reference"]
 
+# Rating parameters. Half-life and T20I weight are placeholders until they are tuned on
+# next-ball log-likelihood (DECISIONS.md section 7); the rest are sample-size floors.
+vars:
+  rating_half_life_days: 730
+  rating_t20i_weight: 0.5
+  # a player's (decayed) balls in a phase before they count toward estimating a prior
+  rating_min_prior_balls: 60
+  # fewer qualifying players than this and the role's prior falls back to all roles
+  rating_min_prior_players: 20
+  # a prior is never worth more than this many balls, even when players barely differ
+  rating_max_prior_balls: 5000
+  # role from the share of balls bowled among balls faced plus bowled
+  rating_min_role_balls: 60
+  rating_role_batter_max_share: 0.2
+  rating_role_bowler_min_share: 0.7
+
 models:
   cricket_value:
     staging:
       +materialized: view
     intermediate:
       +materialized: view
+      # read many times by the ASOF joins downstream
+      ratings:
+        +materialized: table
     marts:
       +materialized: table
       +contract:

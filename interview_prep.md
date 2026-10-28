@@ -20,6 +20,7 @@
 16. [Exploration: the toss, chasing, venues and home advantage](#16-exploration-the-toss-chasing-venues-and-home-advantage)
 17. [The dbt warehouse: star schema, contracts and tests](#17-the-dbt-warehouse-star-schema-contracts-and-tests)
 18. [Kinds of data warehouse, and where DuckDB fits](#18-kinds-of-data-warehouse-and-where-duckdb-fits)
+19. [Point-in-time player ratings](#19-point-in-time-player-ratings)
 
 ---
 
@@ -678,3 +679,49 @@ Two fact tables sharing *conformed* dimensions makes this a small **fact constel
 - *"Isn't DuckDB just SQLite?"* Same deployment model (embedded, one file), opposite design: SQLite is a row-store for transactions, DuckDB is columnar and vectorised for analytics.
 - *"What would you pick at a company?"* Usually whatever is already there, most often Snowflake or BigQuery, since the warehouse is shared infrastructure. For new builds with lots of raw files, a lakehouse on Iceberg keeps the data open to several engines.
 - *"What's MotherDuck?"* A hosted DuckDB service that adds sharing and cloud storage, one path to scale without changing engines.
+
+---
+
+## 19. Point-in-time player ratings
+
+Code: `dbt/models/intermediate/ratings/`, `dbt/macros/ratings.sql`, `dbt/models/marts/player_ratings_asof.sql`, `tests/warehouse/test_ratings.py`.
+
+**The one rule:** a rating used for a match on date D may only use matches from *before* D. If it used the match itself, the win model would be trained on information it couldn't have had at the toss. That's **leakage**, and it makes a model look far better in backtests than it will ever be live.
+
+**Pipeline, one idea per model:**
+1. **Evidence:** per player, day, skill (bat or bowl), phase and stat, the day's weighted sums:
+   - `n`: balls;
+   - `x`: outcomes;
+   - `x2`: squared outcomes, for the variance;
+   - `n2`: squared weights.
+2. **Cumulative:** running totals of each series, with every term multiplied by `e^(λ·day)`.
+3. **As-of:** for each (player, D), DuckDB's `ASOF JOIN ... AND D > evidence_date` picks the last running total *strictly before* D. Multiplying it by `e^(−λ·D)` decays the whole history to D in one step.
+4. **Priors and shrinkage:** `rating = (x + k·m) / (n + k)`.
+
+**Why the cumulative trick:** the decay weight for a ball on day `t` used on day `D` is `e^(−λ(D − t)) = e^(−λD) · e^(λt)`. The `e^(λt)` part doesn't depend on D, so it can be summed once, as a running total. Without the trick, every (player, date) pair would need its own sum over the whole history, which is quadratic. With it, the work is one window function plus one join.
+- **Overflow:** days are counted from 2005-01-01, so `e^(λt)` stays small. With a 730-day half-life it's about `e^7.5`.
+
+**Point in time for priors too.** It's easy to make the ratings point in time but estimate the role average from *all* data, which leaks the future through the prior. Here, each calendar year's priors use only evidence from before 1 January of that year. A test checks both.
+
+**How the point-in-time test proves it:** build the warehouse, then rebuild it after changing every ball from 2023-03-31 onwards (+4 runs a ball, all wickets removed). Every rating dated on or before 2023-03-31 must be *identical*. The test also checks that later ratings *do* change, so it can't pass trivially. This kind of test is called **perturbation** or **metamorphic** testing. It checks behaviour, not how the code was written, so it would catch a leak from any source: a wrong join, the priors, the roles or the decay.
+
+**Method of moments, in one breath:**
+- The spread of players' observed rates = the true spread of skill + sampling noise.
+- The noise is known from the binomial or normal model, so `true spread = observed spread − noise`.
+- `k` = noise per ball ÷ true spread: how many balls of a player's own data it takes to count as much as the prior.
+
+**A bug worth telling:** with decayed weights, a rate's sampling variance is `ball_var · Σw²/(Σw)²`. That's the "effective sample size" correction, `n_eff = (Σw)²/Σw²`. Using the naive `ball_var/Σw` overstated the noise, so the true spread came out at or below zero, and every dismissal prior hit the 5,000-ball cap. Tracking `Σw²` (decayed at `2λ`) fixed it: dismissal priors are now worth about 450–1,300 balls.
+
+**Findings:**
+- **Wicket rate is mostly noise.** Bowlers' per-ball wicket rates barely differ beyond chance, so their `k` often reaches the cap. Economy and dot rate carry the bowling signal. This matches the common analytics view that wickets in T20 are high-variance.
+- **Role priors matter for tailenders.** Bowlers batting at the death average 1.21 runs per ball, against 1.77 for batters. Shrinking a 10-ball tailender toward the overall average would rate them as a decent batter.
+- **Burn-in:** priors need history, so ratings start in 2009–2010. IPL 2008–2009 are evidence only, and the win model starts at 2010.
+- **Sanity check:** players under 30 balls make up 75–100% of the extremes of raw rates, but only about their base rate of the extremes of ratings. The top of each list is the players a fan would name: Bumrah and Narine for death economy, Boult and Bhuvneshwar for powerplay dot balls.
+
+**Where pandas is used:** only in the tests, to rewrite silver Parquet for the perturbation test and to compare the two builds with `pd.testing.assert_frame_equal`. The ratings themselves are pure SQL.
+
+**Likely follow-up questions**
+- *"Why `ASOF JOIN` and not a window over every match?"* An as-of join is the standard tool for "latest value before time t" (finance uses it for prices at trade time). It's one join instead of a correlated subquery.
+- *"Why are T20Is down-weighted?"* Full Member T20Is are a different, often stronger, standard than the IPL, and they're there to fill gaps in IPL history. The weight (0.5 for now) gets tuned on next-ball log-likelihood rather than picked by hand.
+- *"Why 1 January for priors, not the day before each match?"* Priors estimated daily would cost a full method-of-moments pass per date for almost no change. Yearly priors are still strictly point in time.
+- *"What's the weakness?"* Method-of-moments `k` is noisy from year to year, and roles are a coarse share of balls. A hierarchical Bayesian model fitted jointly would do both better, at much higher cost.
