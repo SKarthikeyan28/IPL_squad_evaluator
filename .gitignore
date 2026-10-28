@@ -22,3 +22,5 @@ data/raw/*
 dbt/target/
 dbt/logs/
 dbt/.user.yml
+# Agent worktrees (Claude Code)
+.claude/worktrees/

@@ -1,4 +1,4 @@
-.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook dbt dbt-docs dagster test lint typecheck check
+.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook dbt dbt-docs lineage dagster test lint typecheck check
 
 install:
 	uv sync
@@ -35,6 +35,10 @@ dbt:
 # Lineage graph and column docs at http://localhost:8080
 dbt-docs:
 	uv run dbt docs generate $(DBT_FLAGS) && uv run dbt docs serve $(DBT_FLAGS)
+
+# Redraw the dbt lineage graph in README.md from the dbt project (no data needed)
+lineage:
+	uv run python -m cricket_value.warehouse.lineage
 
 # Re-run the exploration notebook in place and refresh reports/figures/
 notebook:
