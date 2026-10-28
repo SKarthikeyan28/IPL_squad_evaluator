@@ -59,6 +59,9 @@ Settled in a design review on 2026-10-26. These decisions refine [Project_brief.
 - **Impact Player reason:** Cricsheet records Impact Player subs with the reason `impact_player`, which the format docs don't list. The real data is what counts.
 - **Conditional requests:** the downloader sends `If-Modified-Since` using the stored `Last-Modified` value, so an unchanged source costs one 304 response. A body whose SHA-256 is already stored is also skipped.
 - **T20Is:** men's only, from 2005, and only matches where both sides are Full Members. This is one config switch. Opponent-strength adjustment goes in the write-up as future work.
+  - **Full Members:** listed in `config/reference/full_member_nations.csv`, judged *as of the match date* (Ireland and Afghanistan became Full Members on 22 June 2017). `fact_delivery.is_full_member_t20i` flags the qualifying deliveries, and ratings filter on it.
+  - **Size of the cut:** only **31% of T20I deliveries** (258,166 of 819,957) are from Full Member against Full Member matches, because most T20Is are now played between associate nations.
+  - **Known source gap:** Cricsheet **withholds all men's matches involving Afghanistan** (163 T20Is; see cricsheet.org/withheld-matches). Afghan players therefore have IPL data but no T20I data, so their ratings rest on fewer balls and shrink harder toward the role prior. The write-up must say so. The IPL archive withholds nothing (all 1,243 matches are present).
 
 ## 3. Storage, partitioning and reproducibility
 
@@ -87,6 +90,25 @@ Settled in a design review on 2026-10-26. These decisions refine [Project_brief.
   - **Baselines:** fingerprints are stored per raw snapshot in `data/build/fingerprints/<snapshot_id>.json`. The first build of a snapshot stores them, later builds must match exactly or the command fails and names each output that changed, and new raw data starts a new baseline. `make rebuild ARGS=--update-baseline` accepts a deliberate change.
   - **Real data:** three consecutive rebuilds matched. The regenerated reports are byte-identical to the committed ones.
   - **Tests:** a test builds the fixtures twice into separate folders and requires identical fingerprints, so CI checks determinism without the real data.
+
+- **Warehouse (dbt + DuckDB, `make dbt` → `data/warehouse.duckdb`):**
+  - **Project layout:** the project lives in `dbt/`. Its sources read the silver Parquet in place (`read_parquet` with hive partitioning), and seeds are the CSVs in `config/reference/` themselves, so there's one copy of every reference fact, read by both Python and dbt.
+  - **Layers:**
+    - **Staging** (`stg_silver__*`): thin views.
+    - **Intermediate:** `int_match_home_status` (the home rule), `int_team_names` (team name → `team_id`) and `int_venue_names` (venue name → `venue_id`).
+    - **Marts:** tables with **enforced contracts**, where every column's type is declared and a build that returns anything else fails.
+  - **Star schema:** `fact_delivery` (one row per ball) and `fact_team_match` (one row per team per match) share the dimensions `dim_player`, `dim_team`, `dim_venue` and `dim_season`, which makes a small fact constellation.
+    - **Team keys:** an IPL `team_id` is the franchise, so renames share an id. A national side's is `nat_<slug>`.
+    - **Venue keys:** curated grounds keep their ids. Other names get `v_<slug>`, because T20I grounds aren't curated yet, so two spellings of one T20I ground stay separate.
+    - **Derived flags in `fact_delivery`:** `phase`, `runs_conceded` (bat + wides + no-balls), `bowler_wicket` (only dismissals credited to the bowler), `batter_dismissed` (the striker was out) and `is_full_member_t20i`.
+  - **`dim_player`:** falls back to the latest scorecard name, with `in_register = false`, if the register ever lags a new match. On the real data all 5,166 players are in the register.
+  - **Tests:** 118 dbt steps, made up of not-null, unique, relationship and accepted-values tests on the marts, plus four custom tests:
+    - every silver delivery appears exactly once in the fact table;
+    - Impact Player substitutions occur only in rule seasons;
+    - home status is symmetric;
+    - each match has two team rows.
+  - **CI:** `tests/warehouse` builds the warehouse from fixture data with `dbt build` through `cricket_value.warehouse.dbt.run_dbt`, and asserts that the dbt home rule equals the Python rule. Both exist until the Python callers read the warehouse.
+  - **Consistency check:** the warehouse's home win rate (53.11% of 915 matches) is identical to the notebook's.
 
 ## 4. Data quality
 

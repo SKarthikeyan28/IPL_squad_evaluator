@@ -1,0 +1,391 @@
+# Marts: contracts are enforced (dbt_project.yml), so each column's type is part of the
+# model's interface, and a build that returns anything else fails.
+version: 2
+models:
+- name: dim_player
+  description: One row per person who appears in a match (Cricsheet register identity).
+  columns:
+  - name: player_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - unique
+  - name: player_name
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: unique_name
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: key_cricinfo
+    data_type: varchar
+  - name: in_register
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: first_match_date
+    data_type: date
+    data_tests:
+    - not_null
+  - name: last_match_date
+    data_type: date
+    data_tests:
+    - not_null
+  - name: ipl_matches
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: t20i_matches
+    data_type: integer
+    data_tests:
+    - not_null
+- name: dim_team
+  description: 'One row per team: IPL franchises (renames share an id) and national T20I sides.'
+  columns:
+  - name: team_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - unique
+  - name: team_name
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: competition
+    data_type: varchar
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - ipl
+          - t20i
+  - name: is_full_member_nation
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: first_season_in_data
+    data_type: integer
+  - name: last_season_in_data
+    data_type: integer
+- name: dim_venue
+  description: One row per ground; IPL grounds curated, other names as recorded.
+  columns:
+  - name: venue_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - unique
+  - name: venue_name
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: city
+    data_type: varchar
+  - name: country
+    data_type: varchar
+  - name: is_curated
+    data_type: boolean
+    data_tests:
+    - not_null
+- name: dim_season
+  description: One row per competition season, with rule flags.
+  columns:
+  - name: season_key
+    data_type: varchar
+    data_tests:
+    - not_null
+    - unique
+  - name: competition
+    data_type: varchar
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - ipl
+          - t20i
+  - name: season
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: matches
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: first_match_date
+    data_type: date
+    data_tests:
+    - not_null
+  - name: last_match_date
+    data_type: date
+    data_tests:
+    - not_null
+  - name: impact_player_rule
+    data_type: boolean
+    data_tests:
+    - not_null
+- name: fact_delivery
+  description: 'Grain: one row per ball bowled, wides and no-balls included.'
+  columns:
+  - name: delivery_key
+    data_type: varchar
+    data_tests:
+    - not_null
+    - unique
+  - name: match_id
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: innings_number
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: over_number
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: ball_in_over
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: competition
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: season
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: season_key
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_season')
+          field: season_key
+  - name: match_date
+    data_type: date
+    data_tests:
+    - not_null
+  - name: venue_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_venue')
+          field: venue_id
+  - name: batting_team_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_team')
+          field: team_id
+  - name: bowling_team_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_team')
+          field: team_id
+  - name: batter_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_player')
+          field: player_id
+  - name: non_striker_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_player')
+          field: player_id
+  - name: bowler_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_player')
+          field: player_id
+  - name: phase
+    data_type: varchar
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - powerplay
+          - middle
+          - death
+          - super_over
+  - name: is_super_over
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: runs_batter
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: runs_extras
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: runs_total
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: extras_wides
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: extras_noballs
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: extras_byes
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: extras_legbyes
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: extras_penalty
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: runs_conceded
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: is_legal
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: is_dot
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: is_four
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: is_six
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: n_wickets
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: bowler_wicket
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: batter_dismissed
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: is_full_member_t20i
+    data_type: boolean
+    data_tests:
+    - not_null
+- name: fact_team_match
+  description: 'Grain: one row per team per match.'
+  columns:
+  - name: team_match_key
+    data_type: varchar
+    data_tests:
+    - not_null
+    - unique
+  - name: match_id
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: team_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_team')
+          field: team_id
+  - name: opponent_team_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_team')
+          field: team_id
+  - name: competition
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: season
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: season_key
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_season')
+          field: season_key
+  - name: match_date
+    data_type: date
+    data_tests:
+    - not_null
+  - name: venue_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_venue')
+          field: venue_id
+  - name: home_status
+    data_type: varchar
+    data_tests:
+    - accepted_values:
+        arguments:
+          values:
+          - home
+          - away
+          - neutral
+  - name: won_toss
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: batted_first
+    data_type: boolean
+  - name: result
+    data_type: varchar
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - won
+          - lost
+          - tied
+          - no_result
+  - name: decided_by_super_over
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: win_method
+    data_type: varchar

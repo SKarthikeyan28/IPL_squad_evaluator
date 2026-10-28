@@ -1,0 +1,9 @@
+# Paths are relative to where dbt is run (the repo root via `make dbt`).
+# Tests point both at temp directories through the environment variables.
+cricket_value:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('CV_WAREHOUSE', 'data/warehouse.duckdb') }}"
+      threads: 4

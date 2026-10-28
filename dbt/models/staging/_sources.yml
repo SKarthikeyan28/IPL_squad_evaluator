@@ -1,0 +1,28 @@
+version: 2
+
+# Silver Parquet written by cricket_value.ingest.silver. dbt-duckdb reads the files in
+# place; nothing is copied into the warehouse at this layer. `season` comes from the
+# hive partition folder (season=YYYY).
+sources:
+  - name: silver
+    description: Season-partitioned staging tables parsed from Cricsheet JSON.
+    meta:
+      external_location: >-
+        read_parquet('{{ env_var("CV_SILVER_DIR", "data/silver") }}/{name}/*/*.parquet',
+        hive_partitioning = true, union_by_name = true)
+    tables:
+      - name: matches
+      - name: innings
+      - name: deliveries
+      - name: wickets
+      - name: replacements
+      - name: match_players
+
+  - name: silver_registers
+    description: Cricsheet people and name registers (not partitioned).
+    meta:
+      external_location: >-
+        read_parquet('{{ env_var("CV_SILVER_DIR", "data/silver") }}/{name}/*.parquet')
+    tables:
+      - name: players
+      - name: player_name_variants
