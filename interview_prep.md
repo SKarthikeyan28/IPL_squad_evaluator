@@ -19,6 +19,7 @@
 15. [Reproducible rebuilds: `make rebuild`](#15-reproducible-rebuilds-make-rebuild)
 16. [Exploration: the toss, chasing, venues and home advantage](#16-exploration-the-toss-chasing-venues-and-home-advantage)
 17. [The dbt warehouse: star schema, contracts and tests](#17-the-dbt-warehouse-star-schema-contracts-and-tests)
+18. [Kinds of data warehouse, and where DuckDB fits](#18-kinds-of-data-warehouse-and-where-duckdb-fits)
 
 ---
 
@@ -640,3 +641,40 @@ Two fact tables sharing *conformed* dimensions makes this a small **fact constel
 - *"Why are staging models views and marts tables?"* Views cost nothing to build and always reflect silver. Marts are read many times by ratings, models and the API, so they're materialised once per build.
 - *"How would this run in production?"* The same models on Snowflake or BigQuery, with only the adapter changed. Sources become external or staged tables, and marts could become incremental on season partitions.
 - *"Where's the lineage graph?"* `make dbt-docs` serves dbt's docs site with the full DAG, from sources and seeds to marts, and it goes into the README in Phase 6.
+
+---
+
+## 18. Kinds of data warehouse, and where DuckDB fits
+
+**dbt isn't a database.** It stores no data and runs no queries itself. It turns `SELECT` files into `CREATE TABLE/VIEW` statements and sends them to a database through an **adapter** (`dbt-duckdb`, `dbt-snowflake`, `dbt-bigquery`, ...). That's why the engine can change without rewriting the models.
+
+**Main kinds of warehouse:**
+
+| Kind | Examples | How it works | Good for |
+|---|---|---|---|
+| **Embedded / in-process OLAP** | DuckDB, chDB | A library inside your program; the database is a file. No server. | Single-machine analytics up to roughly hundreds of GB; local dev; CI |
+| **Cloud warehouse, storage separate from compute** | Snowflake, BigQuery, Databricks SQL | Data sits in object storage; compute clusters spin up per query and scale independently. Pay per query or per second. | Shared company warehouse, TB–PB, many concurrent users |
+| **Cloud MPP, compute and storage together** | Amazon Redshift (classic), Azure Synapse dedicated pools | A cluster of nodes, each storing a slice of the data | Steady heavy workloads; older AWS/Azure setups |
+| **Lakehouse** | Apache Iceberg / Delta Lake / Hudi tables queried by Spark, Trino, Snowflake or DuckDB | Open table formats on top of Parquet in S3/GCS add transactions, schema evolution and time travel | One copy of data read by many engines; avoiding vendor lock-in |
+| **Real-time OLAP** | ClickHouse, Apache Druid, Apache Pinot | Columnar servers built for very fast aggregations on fresh, streaming data | User-facing dashboards, sub-second queries on event streams |
+| **Row-store OLTP used as a warehouse** | PostgreSQL, MySQL | Row-oriented, built for transactions | Small analytics next to an app; struggles with big scans |
+
+**OLTP vs OLAP** is the underlying split. OLTP (Postgres behind an app) is row-oriented and handles many small reads and writes. OLAP is columnar and handles few large scans and aggregations, like "average strike rate by phase over 15 seasons". A warehouse is an OLAP system.
+
+**Why DuckDB here:**
+- **Scale:** a few hundred MB of deliveries. Any server or cloud warehouse would be infrastructure with nothing to do.
+- **Zero ops and cost:** `pip install`, one `warehouse.duckdb` file, no account or credit card. Anyone cloning the repo can run `make dbt`.
+- **Reads Parquet in place:** silver is never copied (§17).
+- **CI-friendly:** pytest builds the whole warehouse from fixtures in a temp folder, which would be slow and need secrets on Snowflake.
+- **SQL features the project uses:** `ASOF JOIN` for point-in-time ratings, window functions, hive partitioning.
+- **Portable:** same dbt models, different adapter, if it ever has to scale (§5).
+
+**DuckDB's limits, so you can name them first:**
+- **One writer at a time,** and no server, so it can't be a shared company warehouse with many users writing. Fine here: dbt writes, the API only reads.
+- **One machine:** no spreading work across a cluster.
+- **No access control or roles** beyond file permissions.
+
+**Likely follow-up questions**
+- *"Isn't DuckDB just SQLite?"* Same deployment model (embedded, one file), opposite design: SQLite is a row-store for transactions, DuckDB is columnar and vectorised for analytics.
+- *"What would you pick at a company?"* Usually whatever is already there, most often Snowflake or BigQuery, since the warehouse is shared infrastructure. For new builds with lots of raw files, a lakehouse on Iceberg keeps the data open to several engines.
+- *"What's MotherDuck?"* A hosted DuckDB service that adds sharing and cloud storage, one path to scale without changing engines.
