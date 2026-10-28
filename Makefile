@@ -1,4 +1,4 @@
-.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook dbt dbt-docs lineage dagster test lint typecheck check
+.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook dbt dbt-docs lineage tune-ratings dagster test lint typecheck check
 
 install:
 	uv sync
@@ -31,6 +31,11 @@ rebuild:
 DBT_FLAGS = --project-dir dbt --profiles-dir dbt
 dbt:
 	uv run dbt build $(DBT_FLAGS)
+
+# Tune the ratings' half-life and T20I weight on next-ball log-likelihood (IPL 2010-2024)
+# in a scratch warehouse; writes reports/ratings_tuning.md. Reads silver, like `make dbt`.
+tune-ratings:
+	uv run python -m cricket_value.ratings.tuning $(ARGS)
 
 # Lineage graph and column docs at http://localhost:8080
 dbt-docs:

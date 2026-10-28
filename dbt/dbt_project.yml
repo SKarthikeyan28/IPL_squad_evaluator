@@ -11,10 +11,12 @@ macro-paths: ["macros"]
 # The reference CSVs stay in config/reference (one source of truth, also read by Python)
 seed-paths: ["../config/reference"]
 
-# Rating parameters. Half-life and T20I weight are placeholders until they are tuned on
-# next-ball log-likelihood (DECISIONS.md section 7); the rest are sample-size floors.
+# Rating parameters. Half-life and T20I weight are tuned on next-ball log-likelihood over
+# IPL 2010-2024 (`make tune-ratings`, reports/ratings_tuning.md, DECISIONS.md section 7).
+# The surface is flat from 730 to 2190 days and T20I weight 0.25 to 0.75; the rest are
+# sample-size floors.
 vars:
-  rating_half_life_days: 730
+  rating_half_life_days: 1095
   rating_t20i_weight: 0.5
   # a player's (decayed) balls in a phase before they count toward estimating a prior
   rating_min_prior_balls: 60
