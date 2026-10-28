@@ -389,3 +389,118 @@ models:
     - not_null
   - name: win_method
     data_type: varchar
+- name: player_ratings_asof
+  description: >-
+    One row per player per IPL or Full Member T20I match date. Ratings are per ball, shrunk
+    toward a role prior (empirical Bayes) and built only from matches before match_date.
+    Bowling runs_per_ball x 6 is economy.
+  data_tests:
+  - unique:
+      column_name: "player_id || '|' || match_date"
+  columns:
+  - name: player_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_player')
+          field: player_id
+  - name: match_date
+    data_type: date
+    data_tests:
+    - not_null
+  - name: role
+    description: From the decayed share of balls bowled; unknown below rating_min_role_balls.
+    data_type: varchar
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: [batter, all_rounder, bowler, unknown]
+  - name: bowl_share
+    description: Decayed balls bowled / (balls faced + balls bowled); null with no history.
+    data_type: double
+  - name: source_match_date
+    description: Latest match date of the evidence used; null for a player with no history.
+    data_type: date
+  - name: prior_year
+    description: Priors were estimated from evidence before 1 January of this year.
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: bat_powerplay_runs_per_ball
+    description: Shrunk batting runs per ball, powerplay. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_middle_runs_per_ball
+    description: Shrunk batting runs per ball, middle. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_death_runs_per_ball
+    description: Shrunk batting runs per ball, death. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_powerplay_dismissal_rate
+    description: Shrunk batting dismissals per ball, powerplay. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_middle_dismissal_rate
+    description: Shrunk batting dismissals per ball, middle. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_death_dismissal_rate
+    description: Shrunk batting dismissals per ball, death. Null only when no prior exists yet.
+    data_type: double
+  - name: bowl_powerplay_runs_per_ball
+    description: Shrunk bowling runs per ball, powerplay. Null only when no prior exists yet.
+    data_type: double
+  - name: bowl_middle_runs_per_ball
+    description: Shrunk bowling runs per ball, middle. Null only when no prior exists yet.
+    data_type: double
+  - name: bowl_death_runs_per_ball
+    description: Shrunk bowling runs per ball, death. Null only when no prior exists yet.
+    data_type: double
+  - name: bowl_powerplay_wicket_rate
+    description: Shrunk bowling wickets credited to the bowler per ball, powerplay. Null only when no prior exists yet.
+    data_type: double
+  - name: bowl_middle_wicket_rate
+    description: Shrunk bowling wickets credited to the bowler per ball, middle. Null only when no prior exists yet.
+    data_type: double
+  - name: bowl_death_wicket_rate
+    description: Shrunk bowling wickets credited to the bowler per ball, death. Null only when no prior exists yet.
+    data_type: double
+  - name: bowl_powerplay_dot_rate
+    description: Shrunk bowling dot balls per ball, powerplay. Null only when no prior exists yet.
+    data_type: double
+  - name: bowl_middle_dot_rate
+    description: Shrunk bowling dot balls per ball, middle. Null only when no prior exists yet.
+    data_type: double
+  - name: bowl_death_dot_rate
+    description: Shrunk bowling dot balls per ball, death. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_powerplay_balls
+    description: Decayed, competition-weighted balls faced, powerplay.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: bat_middle_balls
+    description: Decayed, competition-weighted balls faced, middle.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: bat_death_balls
+    description: Decayed, competition-weighted balls faced, death.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: bowl_powerplay_balls
+    description: Decayed, competition-weighted legal balls bowled, powerplay.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: bowl_middle_balls
+    description: Decayed, competition-weighted legal balls bowled, middle.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: bowl_death_balls
+    description: Decayed, competition-weighted legal balls bowled, death.
+    data_type: double
+    data_tests:
+    - not_null

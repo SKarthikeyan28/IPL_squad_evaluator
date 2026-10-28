@@ -176,6 +176,35 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
   - **Prior strength:** estimated by method-of-moments on players with large samples.
 - **Time decay:** exponential, computed in dbt SQL with the cumulative-sum identity `Σ wᵢxᵢ = e^(−λt) · Σ e^(λtᵢ)xᵢ`. Days are counted from a reference date to avoid overflow. Ratings are joined to matches with DuckDB `ASOF JOIN`.
 - **Python fallback:** the `ratings/` module is used only if the SQL becomes unreadable.
+- **Built (`player_ratings_asof`, 2026-10-28):** one row per player per IPL or Full Member T20I match date, 52,686 rows.
+  - **Models:**
+    - `int_rating_evidence`: daily sums per player, skill, phase and stat.
+    - `int_rating_cumulative`: running sums scaled by `e^(λ·day)`.
+    - `int_rating_priors`: per-year priors.
+    - `int_player_ratings_long`: the shrunk ratings, which the mart pivots wide.
+  - **Stats, per ball and per phase:**
+    - **Batting:** runs and dismissals, over balls faced (wides excluded).
+    - **Bowling:** runs conceded (×6 gives economy), wickets credited to the bowler, and dot balls, over legal balls. Runs and wickets off wides and no-balls still count against the bowler.
+  - **Evidence:** IPL balls weigh 1 and Full Member T20I balls weigh `rating_t20i_weight`. Super overs are excluded.
+  - **Placeholder parameters:** half-life 730 days and T20I weight 0.5, until tuning. Both are dbt vars in `dbt/dbt_project.yml`.
+  - **Role:** derived as of each date from the decayed share of balls bowled among balls faced plus bowled.
+    - Below 0.2 is a batter, above 0.7 a bowler, and anything between an all-rounder.
+    - Under 60 decayed balls is `unknown`.
+    - Keepers wait for the week-2 attribute pipeline.
+    - On real data, Kohli, Suryakumar and Dhoni come out as batters; Bumrah, Rashid, Narine and Ashwin as bowlers; the Pandyas, Jadeja, Axar and Russell as all-rounders.
+  - **Priors are point in time too.** Each calendar year's priors use only evidence from before 1 January of that year.
+    - **Prior mean:** the role's pooled rate over all its players. Tail-enders' batting gets its own mean: 1.21 runs per ball at the death, against 1.77 for batters.
+    - **Prior strength `k`:** from players with at least 60 decayed balls in the phase. A role with fewer than 20 such players borrows the pooled `k`.
+    - **Missing years:** a year that can't estimate `k` carries the latest earlier year's forward.
+  - **Noise uses squared weights.** The sampling variance of a weighted rate is `ball_var · Σw²/(Σw)²`, not `ball_var/Σw`. Using `1/Σw` overstated the noise and pushed every dismissal prior to the cap.
+  - **Burn-in:** the first ratings come in 2009 (batting only) and in 2010 (all stats). IPL 2008–2009 matches are evidence, but they have no ratings, so the win model's seasons start at 2010.
+  - **Wicket rate is mostly noise.** Per ball, bowlers' wicket rates barely differ beyond what chance explains, so `k` often reaches the 5,000-ball cap and wicket ratings stay near the prior. Economy and dot rate carry the bowling signal.
+  - **Tests:**
+    - `test_no_rating_uses_a_match_on_or_after_its_date` rebuilds the warehouse with every ball from 2023-03-31 onwards changed. Every rating dated on or before that day must be identical.
+    - The dbt test `ratings_use_only_earlier_matches` checks source dates for both ratings and priors.
+  - **Sanity checks (2026, latest rating per player):**
+    - **Top of each list:** death economy, Bumrah and Narine; powerplay dot balls, Bhuvneshwar, Hazlewood and Boult; powerplay scoring, Suryavanshi, Abhishek Sharma and Head; lowest middle-overs dismissal rate, Klaasen, Iyer, Rahul, Gill and Kohli.
+    - **Small samples:** players under 30 balls make up 75–100% of the extremes of raw rates, but only about their base rate (0–50%) of the extremes of ratings.
 - **Tuning:** the decay rate and T20I weight are tuned on **next-ball log-likelihood** (dismissal and runs outcomes) over the development IPL seasons. They are not tuned on the win model.
 
 ## 8. Win model
