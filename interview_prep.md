@@ -875,3 +875,32 @@ I kept the columns, because Phase 3 may use them, but the write-up must not clai
 - *"Why own-rating shrinkage instead of the role average?"* A hierarchy: a batter's skill against spin is a *deviation from his overall skill*, so his overall rating is the right centre. The role average is the right centre only when we know nothing about him.
 - *"Isn't picking the prior strength on the seasons you score overfitting?"* A little, and the report says so. The strengths from ×1 to ×8 are within noise, so the choice barely matters. A stricter version tunes on earlier seasons and scores on later ones.
 - *"How do you know the split balls partition the unsplit ones?"* A test: with every bowler labelled, balls against pace plus balls against spin equal the balls faced, for every batter, date, phase and stat.
+
+---
+
+## 23. Squad features: turning an XI into numbers
+
+**The idea in one sentence:** before the model sees a match, each side's eleven players are collapsed into a short row of numbers (how strong are the openers, the middle order, the finishers, the bowling in each phase, how many pace and spin options), using only what was known that morning.
+
+**Who counts as the XI.** The players listed as the starting eleven. The Impact Player is a substitute announced later and used in only some matches. If I counted them, the features would depend on a decision made *during* the match. They are stored as events and never used as a model input; instead the model has an `impact_player_era` flag that captures the rule change.
+
+**Batting slots without peeking.** To say "the top three batters" I need to know who bats where, but the order for *that* match is only known after it starts. So each player gets an **expected batting position**: a decayed average of where they batted in *earlier* IPL matches.
+- It is shrunk toward their role's typical position, `(Σw·position + k·default) / (Σw + k)`, with `k = 2`. This is the same shrinkage idea as the ratings: one innings as an opener shouldn't make someone an opener forever, and a debutant has no history, so they get the role's typical position.
+- `k = 2` is a judgement, not a tuned value, and I say so if asked.
+- Players are sorted by expected position and numbered 1 to 11. Top = slots 1–3, middle = 4–6, finishers = 5–8. Slots 5 and 6 are in both middle and finish on purpose: they face both phases.
+
+**Bowling.** The five XI players with the highest share of balls bowled form the attack, averaged per phase. This avoids needing the real bowling order, which is also only known afterwards.
+
+**The testing story (worth telling).** I wrote a leakage test first: rewrite every ball from a cutoff date, then check nothing before the cutoff changed. My first version swapped striker and non-striker. To check the test could fail, I deliberately introduced a leak (`>=` instead of `>` in the history join). The test still passed. The reason: swapping the openers only changes slots 1 and 2, and both go into the same "top 1–3 average", so the features couldn't change. I replaced it with a rewrite that *reverses* the batting order of each innings, and the deliberate leak was then caught. The lesson: a test that has never been seen to fail proves nothing, so break the code on purpose.
+
+**Honest limits:**
+- **Nulls in 2008–2009.** There is no history to build priors from in 2008, and none for death overs in 2009. A dbt test makes sure there are none from 2010. The models use 2015 onwards.
+- **Current labels.** Pace or spin comes from the *current* player attributes. Bowling kind almost never changes, so this is safe, but it is not strictly as of the match date.
+- **No signal in single features, as a first look.** Comparing the two sides inside each match (2015–2024, 633 decided matches), the side with the better single feature won 49–53% of the time, every interval including 50%. That matches the Elo result. If the models also find nothing, the write-up says so.
+
+**Likely follow-up questions**
+- *"Why not use the actual batting order?"* It is only known once the match is under way, so using it would leak the future into a pre-match prediction.
+- *"How do you know there's no leakage?"* A test rewrites the outcomes and batting order of everything from a cutoff and checks all earlier features are identical, and I broke the code on purpose to prove the test fails when it should.
+- *"Why is the Impact Player excluded?"* They are chosen during the match; including them would use information that doesn't exist at the toss.
+- *"Why differences between teams rather than raw features?"* The model's inputs are team A minus team B, so one model covers both orientations and predictions can be made symmetric (next step, not built yet).
+- *"Is k = 2 right?"* It's a judgement. The position only decides which group a player falls into, and the features are group averages, so the model is not very sensitive to it; I haven't tuned it.

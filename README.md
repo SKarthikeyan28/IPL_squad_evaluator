@@ -10,7 +10,7 @@ The ML is the use case. The product is the platform underneath it: immutable raw
 |---|---|---|
 | 1 | Ingestion, raw and staging layers, data quality, orchestration | Done |
 | 2 | dbt star schema and point-in-time player ratings | Done |
-| 3 | Squad features and win probability model | Next, after player attributes |
+| 3 | Squad features and win probability model | In progress: squad features built, models next |
 | 4 | Player value, swap simulator and API | Planned |
 | 5 | Auction data, price model, optimiser and backtest | Planned |
 | 6 | Write-up and polish | Planned |
@@ -66,8 +66,11 @@ flowchart LR
     stg_silver__wickets["stg_silver__wickets"]
   end
   subgraph intermediate
+    int_batting_positions["int_batting_positions"]
+    int_expected_batting_position["int_expected_batting_position"]
     int_match_home_status["int_match_home_status"]
     int_player_attributes["int_player_attributes"]
+    int_squad_xi["int_squad_xi"]
     int_team_names["int_team_names"]
     int_venue_names["int_venue_names"]
   end
@@ -86,26 +89,35 @@ flowchart LR
     fact_delivery["fact_delivery"]
     fact_team_match["fact_team_match"]
     player_ratings_asof["player_ratings_asof"]
+    squad_features["squad_features"]
   end
+  dim_player --> squad_features
   dim_player_history --> dim_player
   fact_delivery --> int_player_ratings_long
   fact_delivery --> int_rating_evidence
   fact_delivery --> int_rating_priors
+  int_batting_positions --> int_expected_batting_position
+  int_expected_batting_position --> int_squad_xi
   int_match_home_status --> fact_team_match
   int_player_attributes --> dim_player_history
   int_player_attributes --> int_rating_evidence
+  int_player_ratings_long --> int_expected_batting_position
+  int_player_ratings_long --> int_squad_xi
   int_player_ratings_long --> player_ratings_asof
   int_rating_cumulative --> int_player_ratings_long
   int_rating_cumulative --> int_rating_priors
   int_rating_evidence --> int_rating_cumulative
   int_rating_evidence --> int_rating_priors
   int_rating_priors --> int_player_ratings_long
+  int_squad_xi --> squad_features
   int_team_names --> dim_team
   int_team_names --> fact_delivery
   int_team_names --> fact_team_match
+  int_team_names --> int_squad_xi
   int_venue_names --> dim_venue
   int_venue_names --> fact_delivery
   int_venue_names --> fact_team_match
+  player_ratings_asof --> squad_features
   reference_seeds --> dim_season
   reference_seeds --> dim_team
   reference_seeds --> dim_venue
@@ -123,19 +135,26 @@ flowchart LR
   silver_registers_player_attributes --> stg_silver__player_attributes
   silver_registers_players --> stg_silver__players
   stg_silver__deliveries --> fact_delivery
+  stg_silver__deliveries --> int_batting_positions
   stg_silver__innings --> fact_delivery
   stg_silver__innings --> fact_team_match
+  stg_silver__innings --> int_batting_positions
   stg_silver__match_players --> dim_player
+  stg_silver__match_players --> int_expected_batting_position
   stg_silver__match_players --> int_player_attributes
   stg_silver__match_players --> int_player_ratings_long
+  stg_silver__match_players --> int_squad_xi
   stg_silver__matches --> dim_player
   stg_silver__matches --> dim_season
   stg_silver__matches --> dim_team
   stg_silver__matches --> fact_delivery
   stg_silver__matches --> fact_team_match
+  stg_silver__matches --> int_batting_positions
+  stg_silver__matches --> int_expected_batting_position
   stg_silver__matches --> int_match_home_status
   stg_silver__matches --> int_player_attributes
   stg_silver__matches --> int_player_ratings_long
+  stg_silver__matches --> int_squad_xi
   stg_silver__matches --> int_team_names
   stg_silver__matches --> int_venue_names
   stg_silver__player_attributes --> int_player_attributes
