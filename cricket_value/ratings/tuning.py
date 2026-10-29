@@ -355,7 +355,9 @@ EVAL_BALLS_SQL = """
 RATED_BALLS_SQL = """
     with balls as ({eval_balls}),
     long as (select * from int_player_ratings_long),
-    priors as (select * from int_rating_priors where role = 'any' and skill = 'bowl')
+    priors as (
+        select * from int_rating_priors where role = 'any' and skill = 'bowl' and vs = 'all'
+    )
     select b.match_id, b.season, b.phase, b.runs_batter, b.batter_dismissed,
         bd.rating as bat_dismissal, br.rating as bat_runs,
         ww.rating as bowl_wicket, wr.rating as bowl_runs,
@@ -363,12 +365,16 @@ RATED_BALLS_SQL = """
     from balls b
     left join long bd on bd.player_id = b.batter_id and bd.match_date = b.match_date
         and bd.phase = b.phase and bd.skill = 'bat' and bd.stat = 'dismissal_rate'
+        and bd.vs = 'all'
     left join long br on br.player_id = b.batter_id and br.match_date = b.match_date
         and br.phase = b.phase and br.skill = 'bat' and br.stat = 'runs_per_ball'
+        and br.vs = 'all'
     left join long ww on ww.player_id = b.bowler_id and ww.match_date = b.match_date
         and ww.phase = b.phase and ww.skill = 'bowl' and ww.stat = 'wicket_rate'
+        and ww.vs = 'all'
     left join long wr on wr.player_id = b.bowler_id and wr.match_date = b.match_date
         and wr.phase = b.phase and wr.skill = 'bowl' and wr.stat = 'runs_per_ball'
+        and wr.vs = 'all'
     left join priors pw on pw.prior_year = year(b.match_date) and pw.phase = b.phase
         and pw.stat = 'wicket_rate'
     left join priors pr on pr.prior_year = year(b.match_date) and pr.phase = b.phase

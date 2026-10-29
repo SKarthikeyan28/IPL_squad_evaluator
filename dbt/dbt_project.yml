@@ -28,6 +28,11 @@ vars:
   rating_min_role_balls: 60
   rating_role_batter_max_share: 0.2
   rating_role_bowler_min_share: 0.7
+  # a pace or spin batting rating shrinks toward the batter's own overall rating ('overall')
+  # or toward the role's average against that kind of bowler ('role'); with 'overall' its
+  # prior is worth this many times the series' own prior strength (see reports/pacespin_split.md)
+  rating_split_shrink_to: overall
+  rating_split_prior_multiplier: 2
 
 models:
   cricket_value:

@@ -608,3 +608,69 @@ models:
     data_type: double
     data_tests:
     - not_null
+  - name: bat_powerplay_vs_pace_runs_per_ball
+    description: Shrunk batting runs per ball against pace bowlers, powerplay. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_powerplay_vs_pace_dismissal_rate
+    description: Shrunk batting dismissals per ball against pace bowlers, powerplay. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_powerplay_vs_spin_runs_per_ball
+    description: Shrunk batting runs per ball against spin bowlers, powerplay. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_powerplay_vs_spin_dismissal_rate
+    description: Shrunk batting dismissals per ball against spin bowlers, powerplay. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_middle_vs_pace_runs_per_ball
+    description: Shrunk batting runs per ball against pace bowlers, middle. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_middle_vs_pace_dismissal_rate
+    description: Shrunk batting dismissals per ball against pace bowlers, middle. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_middle_vs_spin_runs_per_ball
+    description: Shrunk batting runs per ball against spin bowlers, middle. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_middle_vs_spin_dismissal_rate
+    description: Shrunk batting dismissals per ball against spin bowlers, middle. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_death_vs_pace_runs_per_ball
+    description: Shrunk batting runs per ball against pace bowlers, death. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_death_vs_pace_dismissal_rate
+    description: Shrunk batting dismissals per ball against pace bowlers, death. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_death_vs_spin_runs_per_ball
+    description: Shrunk batting runs per ball against spin bowlers, death. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_death_vs_spin_dismissal_rate
+    description: Shrunk batting dismissals per ball against spin bowlers, death. Null only when no prior exists yet.
+    data_type: double
+  - name: bat_powerplay_vs_pace_balls
+    description: Decayed, competition-weighted balls faced against pace bowlers of known bowling kind, powerplay.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: bat_powerplay_vs_spin_balls
+    description: Decayed, competition-weighted balls faced against spin bowlers of known bowling kind, powerplay.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: bat_middle_vs_pace_balls
+    description: Decayed, competition-weighted balls faced against pace bowlers of known bowling kind, middle.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: bat_middle_vs_spin_balls
+    description: Decayed, competition-weighted balls faced against spin bowlers of known bowling kind, middle.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: bat_death_vs_pace_balls
+    description: Decayed, competition-weighted balls faced against pace bowlers of known bowling kind, death.
+    data_type: double
+    data_tests:
+    - not_null
+  - name: bat_death_vs_spin_balls
+    description: Decayed, competition-weighted balls faced against spin bowlers of known bowling kind, death.
+    data_type: double
+    data_tests:
+    - not_null

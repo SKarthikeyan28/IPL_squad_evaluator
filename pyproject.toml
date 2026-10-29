@@ -27,6 +27,8 @@ dev = [
     "nbformat>=5.11.1",
     "nbconvert>=7.17.2",
     "ipykernel>=7.4.0",
+    "pyyaml>=6.0.3",
+    "types-pyyaml>=6.0.12.20260906",
 ]
 
 [build-system]

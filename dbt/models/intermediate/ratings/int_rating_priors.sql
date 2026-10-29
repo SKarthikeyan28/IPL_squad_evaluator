@@ -9,7 +9,10 @@
 --                  normal-normal  k = within-player per-ball variance / between
 --                A rate from weighted balls has noise ball_var * n2 / n^2 (n2 = sum of
 --                squared weights), not ball_var / n: decayed and T20I balls carry less.
--- role = 'any' pools every role. A role with too few qualifying players borrows the pooled
+-- Priors are per series, vs included: a batter's prior against spin is spin's role mean,
+-- not the all-bowler mean. A pace or spin series too sparse to estimate its own prior
+-- strength (spin at the death: few batters face 60 balls of it) borrows the strength of the
+-- unsplit series, after trying its own earlier years; its mean is always its own. role = 'any' pools every role. A role with too few qualifying players borrows the pooled
 -- prior_balls; a role with too few players at all is left out, and ratings use 'any'.
 -- A year that can't estimate prior_balls carries the latest earlier year's forward (still
 -- point in time); before the first estimable year there is no prior and no rating.
@@ -49,21 +52,21 @@ sample as (
 
 means as (
     select
-        prior_year, coalesce(role, 'any') as role, skill, phase, stat, kind,
+        prior_year, coalesce(role, 'any') as role, skill, phase, stat, kind, vs,
         count(*) as n_players,
         sum(x) / sum(n) as prior_mean,
         max(source_match_date) as source_match_date
     from sample
     group by grouping sets (
-        (prior_year, role, skill, phase, stat, kind),
-        (prior_year, skill, phase, stat, kind)
+        (prior_year, role, skill, phase, stat, kind, vs),
+        (prior_year, skill, phase, stat, kind, vs)
     )
     having count(*) >= {{ var('rating_min_prior_players') }}
 ),
 
 moments as (
     select
-        prior_year, coalesce(role, 'any') as role, skill, phase, stat, kind,
+        prior_year, coalesce(role, 'any') as role, skill, phase, stat, kind, vs,
         sum(x) / sum(n) as mean,
         var_samp(x / n) as observed_var,
         avg(n2 / (n * n)) as mean_noise_factor,
@@ -71,8 +74,8 @@ moments as (
     from sample
     where n >= {{ var('rating_min_prior_balls') }}
     group by grouping sets (
-        (prior_year, role, skill, phase, stat, kind),
-        (prior_year, skill, phase, stat, kind)
+        (prior_year, role, skill, phase, stat, kind, vs),
+        (prior_year, skill, phase, stat, kind, vs)
     )
     having count(*) >= {{ var('rating_min_prior_players') }}
 ),
@@ -91,7 +94,7 @@ spread as (
 
 strength as (
     select
-        prior_year, role, skill, phase, stat,
+        prior_year, role, skill, phase, stat, vs,
         case
             when between_var <= 0 then {{ var('rating_max_prior_balls') }}
             else least(
@@ -115,16 +118,30 @@ select
     m.phase::varchar as phase,
     m.stat::varchar as stat,
     m.kind::varchar as kind,
+    m.vs::varchar as vs,
     m.n_players::integer as n_players,
     m.prior_mean::double as prior_mean,
-    coalesce(own.prior_balls, pooled.prior_balls)::double as prior_balls,
+    coalesce(
+        own.prior_balls, pooled.prior_balls, own_unsplit.prior_balls, pooled_unsplit.prior_balls
+    )::double as prior_balls,
     m.source_match_date::date as source_match_date
 from means m
 asof left join strength own
     on own.role = m.role and own.skill = m.skill and own.phase = m.phase and own.stat = m.stat
+    and own.vs = m.vs
     and m.prior_year >= own.prior_year
 asof left join strength pooled
     on pooled.role = 'any' and pooled.skill = m.skill and pooled.phase = m.phase
-    and pooled.stat = m.stat
+    and pooled.stat = m.stat and pooled.vs = m.vs
     and m.prior_year >= pooled.prior_year
-where coalesce(own.prior_balls, pooled.prior_balls) is not null
+asof left join strength own_unsplit
+    on own_unsplit.role = m.role and own_unsplit.skill = m.skill
+    and own_unsplit.phase = m.phase and own_unsplit.stat = m.stat and own_unsplit.vs = 'all'
+    and m.prior_year >= own_unsplit.prior_year
+asof left join strength pooled_unsplit
+    on pooled_unsplit.role = 'any' and pooled_unsplit.skill = m.skill
+    and pooled_unsplit.phase = m.phase and pooled_unsplit.stat = m.stat
+    and pooled_unsplit.vs = 'all' and m.prior_year >= pooled_unsplit.prior_year
+where coalesce(
+    own.prior_balls, pooled.prior_balls, own_unsplit.prior_balls, pooled_unsplit.prior_balls
+) is not null
