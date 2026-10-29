@@ -744,3 +744,106 @@ models:
     data_type: integer
   - name: n_low_sample_players
     data_type: integer
+- name: match_features
+  description: >-
+    Grain: one row per team per decided IPL match. d_ columns are the team's squad feature minus
+    its opponent's; home_edge and chase_edge are +1/-1/0 from the team's side; won is the label.
+    Each match appears once from each side, so a model can be trained on both orientations.
+  columns:
+  - name: team_match_key
+    data_type: varchar
+    data_tests:
+    - not_null
+    - unique
+    - relationships:
+        arguments:
+          to: ref('fact_team_match')
+          field: team_match_key
+  - name: match_id
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: team_id
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: opponent_team_id
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: season
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: match_date
+    data_type: date
+    data_tests:
+    - not_null
+  - name: won
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: decided_by_super_over
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: reduced_overs
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: impact_player_era
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: home_edge
+    data_type: integer
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: [-1, 0, 1]
+          quote: false
+  - name: chase_edge
+    data_type: integer
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values: [-1, 1]
+          quote: false
+  - name: d_top_bat_runs_per_ball
+    data_type: double
+  - name: d_top_bat_dismissal_rate
+    data_type: double
+  - name: d_mid_bat_runs_per_ball
+    data_type: double
+  - name: d_mid_bat_dismissal_rate
+    data_type: double
+  - name: d_finish_bat_runs_per_ball
+    data_type: double
+  - name: d_finish_bat_dismissal_rate
+    data_type: double
+  - name: d_powerplay_bowl_runs_per_ball
+    data_type: double
+  - name: d_powerplay_bowl_wicket_rate
+    data_type: double
+  - name: d_middle_bowl_runs_per_ball
+    data_type: double
+  - name: d_middle_bowl_wicket_rate
+    data_type: double
+  - name: d_death_bowl_runs_per_ball
+    data_type: double
+  - name: d_death_bowl_wicket_rate
+    data_type: double
+  - name: d_n_bowling_options
+    data_type: double
+  - name: d_n_pace_options
+    data_type: double
+  - name: d_n_spin_options
+    data_type: double
+  - name: d_batting_depth
+    data_type: double
+  - name: d_n_all_rounders
+    data_type: double
+  - name: d_n_low_sample_players
+    data_type: double

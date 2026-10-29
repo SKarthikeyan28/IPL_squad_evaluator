@@ -291,6 +291,12 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
   - **Gaps:** every feature is null for 2008 (no history to build priors from) and the death-phase features are null for 2009. From 2010 there are none, and a dbt test enforces it. The models start at 2015 or later, so this doesn't matter for them.
   - **Tests:** an independent pandas recomputation of expected position and of the feature values, and a leakage test that rewrites outcomes *and reverses the batting order* of every ball from a cutoff and checks that every earlier feature is unchanged. A first version of that test only swapped striker and non-striker, which changes slots 1 and 2 only, and both feed the same "top" average. Introducing a deliberate leak (`>=` instead of `>`) did not fail it, so it was strengthened until that leak was caught.
   - **A first look at signal (exploratory, not in the repo's tests or reports):** on the 633 decided matches of 2015–2024, comparing the two XIs inside each match, the side with the higher value of a single feature won no more often than a coin flip. The rates were 0.49–0.53 and every bootstrap interval included 0.5. This is consistent with the Elo result. The models will tell whether combinations carry signal, and a null result will be reported as one.
+- **Match features as built** (`match_features`, one row per team per decided IPL match, 2,468 rows):
+  - **Grain:** a team's row is its squad features minus its opponent's, and the opponent's own row is the other orientation. A model trained on both has no "team A" bias, and predictions can be made symmetric.
+  - **Antisymmetric inputs** (negated when the orientation flips): every `d_<feature>`, `home_edge` (+1 home, -1 away, 0 neutral) and `chase_edge` (+1 bats second, -1 first). **Symmetric flags** (same for both sides): `decided_by_super_over`, `reduced_overs` (D/L), `impact_player_era` (2023+).
+  - **Label:** `won`. A tie takes the official winner (the super over). The 9 abandoned matches are excluded.
+  - **Sanity check against the exploration:** the home side wins 53.1% of 915 matches and the chasing side 54.5% of 1,234, as in the notebook.
+  - **Not yet in:** venue effects (they must be estimated within an era, see above) and Elo as a feature. Both come with the models.
 - **Outcome labels:**
   - **No-results and abandoned matches:** excluded from training.
   - **Ties:** use the official winner, including super overs, plus a `decided_by_super_over` flag.

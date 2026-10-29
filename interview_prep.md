@@ -904,3 +904,26 @@ I kept the columns, because Phase 3 may use them, but the write-up must not clai
 - *"Why is the Impact Player excluded?"* They are chosen during the match; including them would use information that doesn't exist at the toss.
 - *"Why differences between teams rather than raw features?"* The model's inputs are team A minus team B, so one model covers both orientations and predictions can be made symmetric (next step, not built yet).
 - *"Is k = 2 right?"* It's a judgement. The position only decides which group a player falls into, and the features are group averages, so the model is not very sensitive to it; I haven't tuned it.
+
+---
+
+## 24. Match features: one row per team, differences and symmetry
+
+**The idea:** the model answers "does this team win this match?" from the *difference* between the two XIs (my openers minus theirs, my death bowling minus theirs) plus what is known at the toss.
+
+**Why one row per team, not per match.** Each match gives two rows, one from each side. In one, every difference is `A − B` and the label is "A won"; in the other, every difference is negated and the label flips. Training on both means the model can't learn "team 1 tends to win" (an accident of how the data lists teams), and predictions can be made symmetric.
+
+**Antisymmetric vs symmetric.** Differences, `home_edge` (+1 home, −1 away, 0 neutral) and `chase_edge` (+1 batting second) flip sign with the orientation. Flags like "Impact Player era" and "decided by super over" are the same for both sides. A test checks every column of the two rows of every match is an exact mirror image.
+
+**Home advantage is one shared effect.** A separate home effect per franchise would mix "plays well at home" with "is a good team", and each franchise has only 7–108 home matches. One shared effect (`home_edge`) is estimable.
+
+**Chase, not toss.** Who won the toss isn't a feature: the toss itself is a coin flip, and the measured edge belongs to *who bats second* (54.5% in the exploration), which is known right after the toss.
+
+**A bug the tests caught.** `win_method = 'D/L'` is null for ordinary matches (no win method), so the flag came out null instead of false. The `not_null` test on the column failed on 12 rows. SQL three-valued logic: null compared to anything is null, so wrap it in `coalesce(..., false)`.
+
+**Limits:** no venue features yet (they must be estimated within an era, because scoring inflation after 2023 confounds raw venue averages), and no Elo input yet. Both come with the models.
+
+**Likely follow-up questions**
+- *"Why not one row per match?"* Then "team A" is arbitrary, and a model can pick up that arbitrariness. Two mirrored rows remove it.
+- *"Aren't the two rows duplicates, so your test set is double counted?"* They are the same match, so metrics are computed per match (one orientation, or the symmetric average), and bootstrap resamples *matches*, never rows.
+- *"How are ties handled?"* The official winner, which for IPL ties is the super over; a flag records it.
