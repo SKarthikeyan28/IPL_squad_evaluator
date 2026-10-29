@@ -93,6 +93,7 @@ flowchart LR
   fact_delivery --> int_rating_priors
   int_match_home_status --> fact_team_match
   int_player_attributes --> dim_player_history
+  int_player_attributes --> int_rating_evidence
   int_player_ratings_long --> player_ratings_asof
   int_rating_cumulative --> int_player_ratings_long
   int_rating_cumulative --> int_rating_priors
@@ -159,6 +160,7 @@ Every number lives in a generated report. None are typed by hand.
 - [Data quality report](reports/data_quality.md): matches loaded, quarantined and flagged, per season.
 - [Reference audit](reports/reference_audit.md): sourced home grounds checked against where teams actually played.
 - [Player attributes audit](reports/player_attributes.md): attribute coverage weighted by balls, and the hand-check queue.
+- [Pace/spin batting split](reports/pacespin_split.md): does rating batters against pace and spin separately predict better? On the data: against pace yes, against spin no, overall not distinguishable.
 - [Elo baseline](reports/elo_baseline.md): a negative result. Tuned team Elo doesn't beat a coin flip on 2015–2024, so team identity alone carries little signal and the win model has to be built from players.
 - [Exploration notebook](notebooks/01_exploration.ipynb): the toss, chasing, venues and home advantage, with Wilson intervals. All logic is in tested functions in [`cricket_value/analysis/`](cricket_value/analysis/).
 

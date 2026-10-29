@@ -1,4 +1,4 @@
-.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook attributes attributes-audit dbt dbt-docs lineage tune-ratings dagster test lint typecheck check
+.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook attributes attributes-audit dbt dbt-docs lineage tune-ratings split-eval dagster test lint typecheck check
 
 install:
 	uv sync
@@ -45,6 +45,11 @@ dbt:
 # in a scratch warehouse; writes reports/ratings_tuning.md. Reads silver, like `make dbt`.
 tune-ratings:
 	uv run python -m cricket_value.ratings.tuning $(ARGS)
+
+# Does the pace/spin batting split predict better than the unsplit rating? Scores both on
+# IPL 2010-2024 next-ball log-likelihood in a scratch warehouse; writes reports/pacespin_split.md.
+split-eval:
+	uv run python -m cricket_value.ratings.split_eval $(ARGS)
 
 # Lineage graph and column docs at http://localhost:8080
 dbt-docs:
