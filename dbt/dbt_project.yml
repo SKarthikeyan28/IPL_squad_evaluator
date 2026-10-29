@@ -33,6 +33,19 @@ vars:
   # prior is worth this many times the series' own prior strength (see reports/pacespin_split.md)
   rating_split_shrink_to: overall
   rating_split_prior_multiplier: 2
+  # a player's expected batting position is shrunk toward their role's typical position, as if
+  # that many (decay-weighted) innings at the typical position had been observed
+  batting_position_prior_matches: 2
+  # a role's typical position before any earlier IPL innings exist (the first season)
+  batting_position_fallback:
+    batter: 3
+    all_rounder: 6
+    unknown: 6
+    bowler: 9
+  # squad_features must have no null from this season on (a test); the 2008-09 ratings have
+  # no history to build priors from. Raise it to switch the test off, as a deliberately
+  # starved fixture build does
+  squad_features_complete_from: 2010
 
 models:
   cricket_value:

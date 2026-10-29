@@ -674,3 +674,73 @@ models:
     data_type: double
     data_tests:
     - not_null
+- name: squad_features
+  description: >-
+    Grain: one row per IPL team per match. Strength of the starting XI from ratings as of the
+    morning of the match; never the Impact Player, never the match's own batting order.
+  columns:
+  - name: team_match_key
+    data_type: varchar
+    data_tests:
+    - not_null
+    - unique
+    - relationships:
+        arguments:
+          to: ref('fact_team_match')
+          field: team_match_key
+  - name: match_id
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: team_id
+    data_type: varchar
+    data_tests:
+    - not_null
+  - name: match_date
+    data_type: date
+    data_tests:
+    - not_null
+  - name: season
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: n_xi
+    data_type: integer
+    data_tests:
+    - not_null
+  - name: top_bat_runs_per_ball
+    data_type: double
+  - name: top_bat_dismissal_rate
+    data_type: double
+  - name: mid_bat_runs_per_ball
+    data_type: double
+  - name: mid_bat_dismissal_rate
+    data_type: double
+  - name: finish_bat_runs_per_ball
+    data_type: double
+  - name: finish_bat_dismissal_rate
+    data_type: double
+  - name: powerplay_bowl_runs_per_ball
+    data_type: double
+  - name: powerplay_bowl_wicket_rate
+    data_type: double
+  - name: middle_bowl_runs_per_ball
+    data_type: double
+  - name: middle_bowl_wicket_rate
+    data_type: double
+  - name: death_bowl_runs_per_ball
+    data_type: double
+  - name: death_bowl_wicket_rate
+    data_type: double
+  - name: n_bowling_options
+    data_type: integer
+  - name: n_pace_options
+    data_type: integer
+  - name: n_spin_options
+    data_type: integer
+  - name: batting_depth
+    data_type: integer
+  - name: n_all_rounders
+    data_type: integer
+  - name: n_low_sample_players
+    data_type: integer

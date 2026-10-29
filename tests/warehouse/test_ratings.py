@@ -281,7 +281,10 @@ def test_a_sparse_split_series_borrows_the_unsplit_prior_strength(
     series could not estimate its own prior strength and got no ratings at all. With a
     floor that the unsplit series meets and a split one does not, it must borrow."""
     db = build_warehouse(
-        split_silver, tmp_path_factory.mktemp("wh_sparse"), {"rating_min_prior_balls": 8}
+        split_silver,
+        tmp_path_factory.mktemp("wh_sparse"),
+        # starving the priors on purpose leaves nulls the squad features guard would reject
+        {"rating_min_prior_balls": 8, "squad_features_complete_from": 9999},
     )
 
     missing = query(db, MISSING_SPLIT_PRIORS_SQL)
