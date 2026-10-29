@@ -65,3 +65,9 @@ seeds:
     full_member_nations:
       +column_types:
         full_member_from: date
+    player_attribute_overrides:
+      +column_types:
+        player_id: varchar
+        value: varchar
+        retrieved_at: date
+        hand_checked: boolean

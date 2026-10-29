@@ -1,4 +1,4 @@
-.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook dbt dbt-docs lineage tune-ratings dagster test lint typecheck check
+.PHONY: install ingest verify silver quality-report reference-audit elo rebuild notebook attributes attributes-audit dbt dbt-docs lineage tune-ratings dagster test lint typecheck check
 
 install:
 	uv sync
@@ -25,6 +25,15 @@ elo:
 # same raw snapshot. Accept a deliberate change with: make rebuild ARGS=--update-baseline
 rebuild:
 	uv run python -m cricket_value.build.rebuild $(ARGS)
+
+# Fetch player attributes from Wikidata and DBpedia into data/raw (a snapshot is stored
+# only when the answers changed), then stage silver player_attributes. Needs make silver.
+attributes:
+	uv run python -m cricket_value.attributes
+
+# Coverage of player attributes and the hand-check queue -> reports/player_attributes.md
+attributes-audit:
+	uv run python -m cricket_value.attributes.audit
 
 # Build the warehouse (data/warehouse.duckdb): seeds, staging views, marts, then every
 # dbt test and contract. Reads silver in place, so run `make silver` first.

@@ -14,6 +14,7 @@ from tests.ingest.test_silver import (
 )
 
 REPO = Path(__file__).parents[2]
+ATTRIBUTE_FIXTURES = REPO / "tests" / "fixtures" / "attributes"
 
 
 def stage_root(root: Path) -> RebuildPaths:
@@ -24,6 +25,9 @@ def stage_root(root: Path) -> RebuildPaths:
     )
     stage_file(raw, "cricsheet_people", PEOPLE_CSV, "2026-10-26T07:00:00Z")
     stage_file(raw, "cricsheet_names", NAMES_CSV, "2026-10-26T07:00:00Z")
+    for source in ("wikidata_players", "dbpedia_players"):
+        body = (ATTRIBUTE_FIXTURES / f"{source}.json").read_bytes()
+        stage_file(raw, source, body, "2026-10-29T08:00:00Z", ext=".json")
     return RebuildPaths(root=root, config=REPO / "config")
 
 

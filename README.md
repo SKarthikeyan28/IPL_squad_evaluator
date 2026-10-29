@@ -32,6 +32,7 @@ The ML is the use case. The product is the platform underneath it: immutable raw
 
 - **Raw:** a zip is stored only when its SHA-256 is new. A conditional request makes an unchanged source cost one `304`. Only new or corrected match files are parsed.
 - **Silver:** Python parses the Cricsheet JSON with pandas and writes season-partitioned Parquet with pyarrow. Rows that break a data contract are quarantined, not dropped silently. Ball-by-ball runs are reconciled against the targets and winning margins Cricsheet records.
+- **Player attributes:** batting hand, bowling style, date of birth and nationality come from the open Wikidata and DBpedia SPARQL endpoints and Wikipedia's infobox API, linked by ESPNcricinfo ID. They're stored as raw snapshots, corrected by a hand-checked overrides CSV, and versioned as SCD Type 2 in `dim_player_history`.
 - **Gold:** dbt-duckdb reads silver in place. The reference CSVs in [`config/reference/`](config/reference/) are the dbt seeds, so Python and dbt read one copy of every reference fact.
 - **Orchestration:** Dagster assets, partitioned by season, cover raw, silver, the quality report and the Elo baseline. The dbt build runs with `make dbt` until it moves into Dagster through `dagster-dbt`.
 
@@ -47,6 +48,7 @@ flowchart LR
     silver_matches["silver.matches"]
     silver_replacements["silver.replacements"]
     silver_wickets["silver.wickets"]
+    silver_registers_player_attributes["silver_registers.player_attributes"]
     silver_registers_player_name_variants["silver_registers.player_name_variants"]
     silver_registers_players["silver_registers.players"]
   end
@@ -58,12 +60,14 @@ flowchart LR
     stg_silver__innings["stg_silver__innings"]
     stg_silver__match_players["stg_silver__match_players"]
     stg_silver__matches["stg_silver__matches"]
+    stg_silver__player_attributes["stg_silver__player_attributes"]
     stg_silver__players["stg_silver__players"]
     stg_silver__replacements["stg_silver__replacements"]
     stg_silver__wickets["stg_silver__wickets"]
   end
   subgraph intermediate
     int_match_home_status["int_match_home_status"]
+    int_player_attributes["int_player_attributes"]
     int_team_names["int_team_names"]
     int_venue_names["int_venue_names"]
   end
@@ -75,6 +79,7 @@ flowchart LR
   end
   subgraph marts
     dim_player["dim_player"]
+    dim_player_history["dim_player_history"]
     dim_season["dim_season"]
     dim_team["dim_team"]
     dim_venue["dim_venue"]
@@ -82,10 +87,12 @@ flowchart LR
     fact_team_match["fact_team_match"]
     player_ratings_asof["player_ratings_asof"]
   end
+  dim_player_history --> dim_player
   fact_delivery --> int_player_ratings_long
   fact_delivery --> int_rating_evidence
   fact_delivery --> int_rating_priors
   int_match_home_status --> fact_team_match
+  int_player_attributes --> dim_player_history
   int_player_ratings_long --> player_ratings_asof
   int_rating_cumulative --> int_player_ratings_long
   int_rating_cumulative --> int_rating_priors
@@ -103,6 +110,7 @@ flowchart LR
   reference_seeds --> dim_venue
   reference_seeds --> fact_delivery
   reference_seeds --> int_match_home_status
+  reference_seeds --> int_player_attributes
   reference_seeds --> int_team_names
   reference_seeds --> int_venue_names
   silver_deliveries --> stg_silver__deliveries
@@ -111,11 +119,13 @@ flowchart LR
   silver_matches --> stg_silver__matches
   silver_replacements --> stg_silver__replacements
   silver_wickets --> stg_silver__wickets
+  silver_registers_player_attributes --> stg_silver__player_attributes
   silver_registers_players --> stg_silver__players
   stg_silver__deliveries --> fact_delivery
   stg_silver__innings --> fact_delivery
   stg_silver__innings --> fact_team_match
   stg_silver__match_players --> dim_player
+  stg_silver__match_players --> int_player_attributes
   stg_silver__match_players --> int_player_ratings_long
   stg_silver__matches --> dim_player
   stg_silver__matches --> dim_season
@@ -123,9 +133,11 @@ flowchart LR
   stg_silver__matches --> fact_delivery
   stg_silver__matches --> fact_team_match
   stg_silver__matches --> int_match_home_status
+  stg_silver__matches --> int_player_attributes
   stg_silver__matches --> int_player_ratings_long
   stg_silver__matches --> int_team_names
   stg_silver__matches --> int_venue_names
+  stg_silver__player_attributes --> int_player_attributes
   stg_silver__players --> dim_player
   stg_silver__wickets --> fact_delivery
 ```
@@ -146,6 +158,7 @@ Every number lives in a generated report. None are typed by hand.
 
 - [Data quality report](reports/data_quality.md): matches loaded, quarantined and flagged, per season.
 - [Reference audit](reports/reference_audit.md): sourced home grounds checked against where teams actually played.
+- [Player attributes audit](reports/player_attributes.md): attribute coverage weighted by balls, and the hand-check queue.
 - [Elo baseline](reports/elo_baseline.md): a negative result. Tuned team Elo doesn't beat a coin flip on 2015–2024, so team identity alone carries little signal and the win model has to be built from players.
 - [Exploration notebook](notebooks/01_exploration.ipynb): the toss, chasing, venues and home advantage, with Wilson intervals. All logic is in tested functions in [`cricket_value/analysis/`](cricket_value/analysis/).
 
@@ -157,6 +170,7 @@ Requires Python 3.12 and [uv](https://docs.astral.sh/uv/).
 make install     # uv sync
 make ingest      # download Cricsheet into data/raw (incremental)
 make silver      # parse raw into season-partitioned Parquet
+make attributes  # fetch player attributes from Wikidata, DBpedia and Wikipedia, stage them
 make dbt         # build data/warehouse.duckdb: seeds, models, contracts and tests
 make dbt-docs    # dbt docs with the lineage graph at http://localhost:8080
 make dagster     # Dagster UI at http://localhost:3000

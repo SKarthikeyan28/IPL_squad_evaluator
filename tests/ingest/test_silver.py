@@ -198,19 +198,19 @@ def test_rebuild_removes_stale_partitions(raw: Path, tmp_path: Path) -> None:
 PEOPLE_CSV = (
     b"identifier,name,unique_name,key_bcci,key_cricinfo,key_cricinfo_2\n"
     b"ba607b88,V Kohli,V Kohli,164,253802,\n"
-    b"462411b3,MS Dhoni,MS Dhoni,1,28081,\n"
+    b"4a8a2e3b,MS Dhoni,MS Dhoni,1,28081,\n"
 )
-NAMES_CSV = b"identifier,name\nba607b88,V Kohli\nba607b88,Virat Kohli\n462411b3,MS Dhoni\n"
+NAMES_CSV = b"identifier,name\nba607b88,V Kohli\nba607b88,Virat Kohli\n4a8a2e3b,MS Dhoni\n"
 
 
-def stage_file(raw: Path, source: str, body: bytes, fetched_at: str) -> None:
-    rel = f"{source}/{fetched_at.replace('-', '').replace(':', '')}.csv"
+def stage_file(raw: Path, source: str, body: bytes, fetched_at: str, ext: str = ".csv") -> None:
+    rel = f"{source}/{fetched_at.replace('-', '').replace(':', '')}{ext}"
     (raw / rel).parent.mkdir(parents=True, exist_ok=True)
     (raw / rel).write_bytes(body)
     Manifest(raw / "manifest").add_archive(
         ArchiveRecord(
             source=source,
-            url=f"https://example.test/{source}.csv",
+            url=f"https://example.test/{source}{ext}",
             path=rel,
             sha256=hashlib.sha256(body).hexdigest(),
             n_bytes=len(body),
@@ -230,7 +230,7 @@ def test_registers_become_players_and_name_variants(tmp_path: Path) -> None:
 
     players = pd.read_parquet(out / "players").sort_values("player_id")
     assert counts == {"players": 2, "player_name_variants": 3}
-    assert players["player_id"].tolist() == ["462411b3", "ba607b88"]
+    assert players["player_id"].tolist() == ["4a8a2e3b", "ba607b88"]
     kohli = players[players["player_id"] == "ba607b88"].iloc[0]
     assert kohli["key_cricinfo"] == "253802"  # IDs stay strings, never 253802.0
     assert pd.isna(kohli["key_cricinfo_2"])

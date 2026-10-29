@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from dbt.artifacts.schemas.run import RunExecutionResult
 
+from cricket_value.attributes.silver import build_player_attributes
 from cricket_value.ingest.manifest import Manifest
 from cricket_value.ingest.silver import build_registers, build_silver
 from cricket_value.warehouse.dbt import run_dbt
@@ -20,6 +21,8 @@ FIXTURE_VARS = {
     "rating_min_prior_balls": 1,
     "rating_min_prior_players": 2,
     "rating_min_role_balls": 10,
+    # the 15-match fixture holds 2 of the override CSV's players
+    "overrides_require_known_players": False,
 }
 
 
@@ -28,6 +31,7 @@ def build_fixture_silver(root: Path) -> Path:
     manifest = Manifest(paths.raw / "manifest")
     build_silver(paths.raw, manifest, paths.silver, COMPETITIONS)
     build_registers(paths.raw, manifest, paths.silver)
+    build_player_attributes(paths.raw, manifest, paths.silver)
     return paths.silver
 
 

@@ -1,0 +1,66 @@
+{
+ "bindings": [
+  {
+   "article": {
+    "type": "uri",
+    "value": "https://en.wikipedia.org/wiki/MS_Dhoni"
+   },
+   "cid": {
+    "type": "literal",
+    "value": "28081"
+   },
+   "citizenship": {
+    "type": "literal",
+    "value": "India",
+    "xml:lang": "en"
+   },
+   "dob": {
+    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+    "type": "literal",
+    "value": "1981-07-07T00:00:00Z"
+   },
+   "item": {
+    "type": "uri",
+    "value": "http://www.wikidata.org/entity/Q470774"
+   },
+   "sport_country": {
+    "type": "literal",
+    "value": "India",
+    "xml:lang": "en"
+   }
+  },
+  {
+   "article": {
+    "type": "uri",
+    "value": "https://en.wikipedia.org/wiki/Virat_Kohli"
+   },
+   "cid": {
+    "type": "literal",
+    "value": "253802"
+   },
+   "citizenship": {
+    "type": "literal",
+    "value": "India",
+    "xml:lang": "en"
+   },
+   "dob": {
+    "datatype": "http://www.w3.org/2001/XMLSchema#dateTime",
+    "type": "literal",
+    "value": "1988-11-05T00:00:00Z"
+   },
+   "item": {
+    "type": "uri",
+    "value": "http://www.wikidata.org/entity/Q213854"
+   },
+   "sport_country": {
+    "type": "literal",
+    "value": "India",
+    "xml:lang": "en"
+   }
+  }
+ ],
+ "endpoint": "https://query.wikidata.org/sparql",
+ "queries": [
+  "SELECT ?cid ?item ?dob ?sport_country ?citizenship ?article WHERE {\n  VALUES ?cid { \"253802\" \"28081\" }\n  ?item wdt:P2697 ?cid .\n  OPTIONAL { ?item wdt:P569 ?dob }\n  OPTIONAL { ?item wdt:P1532 ?sc . ?sc rdfs:label ?sport_country\n             FILTER(lang(?sport_country) = \"en\") }\n  OPTIONAL { ?item wdt:P27 ?c . ?c rdfs:label ?citizenship\n             FILTER(lang(?citizenship) = \"en\") }\n  OPTIONAL { ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> }\n}"
+ ]
+}

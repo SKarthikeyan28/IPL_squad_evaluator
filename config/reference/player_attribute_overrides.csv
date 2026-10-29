@@ -1,0 +1,54 @@
+player_id,field,value,source,retrieved_at,hand_checked,note
+4a8a2e3b,batting_hand,right,https://en.wikipedia.org/wiki/MS_Dhoni,2026-10-29,true,DBpedia has no infobox fields for this page; infobox batting = Right-handed
+4a8a2e3b,bowling_kind,pace,https://en.wikipedia.org/wiki/MS_Dhoni,2026-10-29,true,infobox bowling = Right-arm medium
+4a8a2e3b,bowling_arm,right,https://en.wikipedia.org/wiki/MS_Dhoni,2026-10-29,true,infobox bowling = Right-arm medium
+4a8a2e3b,is_keeper,true,https://en.wikipedia.org/wiki/MS_Dhoni,2026-10-29,true,infobox role = Wicket-keeper-batter
+9418198b,nationality,India,https://en.wikipedia.org/wiki/Prabhsimran_Singh,2026-10-29,true,lead: Indian cricketer
+872b03f7,nationality,India,https://en.wikipedia.org/wiki/Ayush_Badoni,2026-10-29,true,lead: Indian cricketer
+9440ef41,nationality,India,https://en.wikipedia.org/wiki/Suyash_Sharma,2026-10-29,true,lead: Indian cricketer
+8e514b4c,nationality,India,https://en.wikipedia.org/wiki/Abdul_Samad_(Indian_cricketer),2026-10-29,true,lead: Indian cricketer
+d1a60072,nationality,India,https://en.wikipedia.org/wiki/Nehal_Wadhera,2026-10-29,true,lead: Indian cricketer
+54e52590,nationality,India,https://en.wikipedia.org/wiki/Vijaykumar_Vyshak,2026-10-29,true,lead: Indian cricketer
+f6d8a7ab,nationality,India,https://en.wikipedia.org/wiki/Kumar_Kartikeya,2026-10-29,true,lead: Indian cricketer
+f89d3b11,nationality,India,https://en.wikipedia.org/wiki/Sameer_Rizvi,2026-10-29,true,lead: Indian cricketer
+0890552f,nationality,India,https://en.wikipedia.org/wiki/Abhinav_Manohar,2026-10-29,true,lead: Indian cricketer
+d45c29b1,nationality,India,https://en.wikipedia.org/wiki/Ashwani_Kumar_(cricketer),2026-10-29,true,lead: Indian cricketer
+ece7b6b3,nationality,India,https://en.wikipedia.org/wiki/Praful_Hinge,2026-10-29,true,lead: Indian cricketer
+4885bbe6,nationality,India,https://en.wikipedia.org/wiki/Yudhvir_Singh_(cricketer),2026-10-29,true,lead: Indian cricketer
+cc61ee8f,nationality,India,https://en.wikipedia.org/wiki/Gurjapneet_Singh,2026-10-29,true,lead: Indian cricketer
+6b2ff18f,nationality,India,https://en.wikipedia.org/wiki/Shubham_Dubey,2026-10-29,true,lead: Indian cricketer
+378daa89,nationality,India,https://en.wikipedia.org/wiki/Aman_Hakim_Khan,2026-10-29,true,lead: Indian cricketer
+60500956,nationality,India,https://en.wikipedia.org/wiki/Ripal_Patel,2026-10-29,true,lead: Indian cricketer
+39f82db3,nationality,Australia,https://en.wikipedia.org/wiki/Daniel_Harris_(cricketer),2026-10-29,true,lead: Australian former cricketer
+b5797845,nationality,India,https://en.wikipedia.org/wiki/Priyansh_Arya,2026-10-29,true,lead: Indian cricketer
+b5797845,batting_hand,left,https://en.wikipedia.org/wiki/Priyansh_Arya,2026-10-29,true,infobox batting = Left-handed
+1a0c3177,bowling_kind,pace,https://en.wikipedia.org/wiki/Parvinder_Awana,2026-10-29,true,lead: right-arm medium pace bowler
+1a0c3177,bowling_arm,right,https://en.wikipedia.org/wiki/Parvinder_Awana,2026-10-29,true,lead: right-arm medium pace bowler
+bd77eb62,bowling_kind,pace,https://en.wikipedia.org/wiki/Andrew_Symonds,2026-10-29,true,infobox lists Right-arm medium then Right-arm off break; first-listed taken as primary
+3812d56b,bowling_kind,spin,https://en.wikipedia.org/wiki/Michael_Yardy,2026-10-29,true,infobox lists Slow left-arm orthodox then Left-arm medium; first-listed taken as primary
+c03449e0,bowling_kind,pace,https://en.wikipedia.org/wiki/Grant_Elliott,2026-10-29,true,"infobox: Right-arm medium, occasional off spin and leg spin"
+8d8c24fd,bowling_kind,pace,https://en.wikipedia.org/wiki/Rob_Nicol,2026-10-29,true,infobox lists Right-arm medium then Right-arm off break; first-listed taken as primary
+fffa744b,date_of_birth,1999-12-31,https://en.wikipedia.org/wiki/Naman_Dhir,2026-10-29,true,infobox and lead agree: 31 December 1999
+fffa744b,nationality,India,https://en.wikipedia.org/wiki/Naman_Dhir,2026-10-29,true,infobox country = India
+fffa744b,batting_hand,right,https://en.wikipedia.org/wiki/Naman_Dhir,2026-10-29,true,infobox batting = Right-handed
+fffa744b,bowling_kind,spin,https://en.wikipedia.org/wiki/Naman_Dhir,2026-10-29,true,infobox bowling = Right-arm off break
+fffa744b,bowling_arm,right,https://en.wikipedia.org/wiki/Naman_Dhir,2026-10-29,true,infobox bowling = Right-arm off break
+26a8b2fe,date_of_birth,2002-08-21,https://en.wikipedia.org/wiki/Hasan_Nawaz,2026-10-29,true,infobox and lead agree: 21 August 2002
+26a8b2fe,nationality,Pakistan,https://en.wikipedia.org/wiki/Hasan_Nawaz,2026-10-29,true,infobox country = Pakistan
+26a8b2fe,batting_hand,right,https://en.wikipedia.org/wiki/Hasan_Nawaz,2026-10-29,true,infobox batting = Right-handed
+60aa2db3,date_of_birth,2006-03-27,https://en.wikipedia.org/wiki/Lhuan-dre_Pretorius,2026-10-29,true,infobox and lead agree: 27 March 2006
+60aa2db3,nationality,South Africa,https://en.wikipedia.org/wiki/Lhuan-dre_Pretorius,2026-10-29,true,infobox country = South Africa
+60aa2db3,batting_hand,left,https://en.wikipedia.org/wiki/Lhuan-dre_Pretorius,2026-10-29,true,infobox batting = Left-handed
+e94d1dcd,date_of_birth,1995-06-07,https://en.wikipedia.org/wiki/Usman_Tariq,2026-10-29,true,infobox and lead agree: 7 June 1995
+e94d1dcd,nationality,Pakistan,https://en.wikipedia.org/wiki/Usman_Tariq,2026-10-29,true,infobox country = Pakistan
+e94d1dcd,batting_hand,right,https://en.wikipedia.org/wiki/Usman_Tariq,2026-10-29,true,infobox batting = Right-handed
+e94d1dcd,bowling_kind,spin,https://en.wikipedia.org/wiki/Usman_Tariq,2026-10-29,true,infobox bowling = Right-arm off spin
+e94d1dcd,bowling_arm,right,https://en.wikipedia.org/wiki/Usman_Tariq,2026-10-29,true,infobox bowling = Right-arm off spin
+1399b39c,date_of_birth,1998-03-28,https://en.wikipedia.org/wiki/Anmolpreet_Singh,2026-10-29,true,infobox and lead agree: 28 March 1998
+1399b39c,nationality,India,https://en.wikipedia.org/wiki/Anmolpreet_Singh,2026-10-29,true,lead: Indian cricketer
+1399b39c,batting_hand,right,https://en.wikipedia.org/wiki/Anmolpreet_Singh,2026-10-29,true,infobox batting = Right-handed
+201facae,date_of_birth,2006-05-05,https://en.wikipedia.org/wiki/Nqobani_Mokoena,2026-10-29,true,infobox and lead agree: 5 May 2006
+201facae,nationality,South Africa,https://en.wikipedia.org/wiki/Nqobani_Mokoena,2026-10-29,true,infobox country = South Africa
+201facae,batting_hand,right,https://en.wikipedia.org/wiki/Nqobani_Mokoena,2026-10-29,true,infobox batting = Right-handed
+201facae,bowling_kind,pace,https://en.wikipedia.org/wiki/Nqobani_Mokoena,2026-10-29,true,infobox bowling = Right arm fast medium
+201facae,bowling_arm,right,https://en.wikipedia.org/wiki/Nqobani_Mokoena,2026-10-29,true,infobox bowling = Right arm fast medium

@@ -19,10 +19,14 @@ sources:
       - name: match_players
 
   - name: silver_registers
-    description: Cricsheet people and name registers (not partitioned).
+    description: Cricsheet registers and player attributes (not partitioned).
     meta:
       external_location: >-
         read_parquet('{{ env_var("CV_SILVER_DIR", "data/silver") }}/{name}/*.parquet')
     tables:
       - name: players
       - name: player_name_variants
+      - name: player_attributes
+        description: >-
+          Wikidata and DBpedia attributes, one row per player per raw snapshot
+          (cricket_value.attributes.silver).

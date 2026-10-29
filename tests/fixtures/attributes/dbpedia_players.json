@@ -1,0 +1,52 @@
+{
+ "bindings": [
+  {
+   "o": {
+    "type": "literal",
+    "value": "Right-arm medium",
+    "xml:lang": "en"
+   },
+   "p": {
+    "type": "uri",
+    "value": "http://dbpedia.org/property/bowling"
+   },
+   "s": {
+    "type": "uri",
+    "value": "http://dbpedia.org/resource/Virat_Kohli"
+   }
+  },
+  {
+   "o": {
+    "type": "literal",
+    "value": "Right-handed",
+    "xml:lang": "en"
+   },
+   "p": {
+    "type": "uri",
+    "value": "http://dbpedia.org/property/batting"
+   },
+   "s": {
+    "type": "uri",
+    "value": "http://dbpedia.org/resource/Virat_Kohli"
+   }
+  },
+  {
+   "o": {
+    "type": "uri",
+    "value": "http://dbpedia.org/resource/Batting_order_(cricket)"
+   },
+   "p": {
+    "type": "uri",
+    "value": "http://dbpedia.org/property/role"
+   },
+   "s": {
+    "type": "uri",
+    "value": "http://dbpedia.org/resource/Virat_Kohli"
+   }
+  }
+ ],
+ "endpoint": "https://dbpedia.org/sparql",
+ "queries": [
+  "SELECT ?s ?p ?o WHERE { VALUES ?s { <http://dbpedia.org/resource/MS_Dhoni> <http://dbpedia.org/resource/Virat_Kohli> } VALUES ?p { <http://dbpedia.org/property/batting> <http://dbpedia.org/property/bowling> <http://dbpedia.org/property/role> } ?s ?p ?o }"
+ ]
+}

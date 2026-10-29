@@ -40,6 +40,110 @@ models:
     data_type: integer
     data_tests:
     - not_null
+  - name: date_of_birth
+    data_type: date
+  - name: nationality
+    description: Override, else Wikidata country for sport, else Wikipedia infobox country, else latest T20I team, else citizenship.
+    data_type: varchar
+  - name: nationality_source
+    data_type: varchar
+    data_tests:
+    - accepted_values:
+        arguments:
+          values: [override, wikidata_sport_country, wikipedia_country, t20i_team, wikidata_citizenship]
+  - name: batting_hand
+    data_type: varchar
+    data_tests:
+    - accepted_values:
+        arguments:
+          values: [left, right]
+  - name: bowling_kind
+    data_type: varchar
+    data_tests:
+    - accepted_values:
+        arguments:
+          values: [pace, spin]
+  - name: bowling_arm
+    data_type: varchar
+    data_tests:
+    - accepted_values:
+        arguments:
+          values: [left, right]
+  - name: is_keeper
+    data_type: boolean
+    data_tests:
+    - not_null
+- name: dim_player_history
+  description: >-
+    SCD Type 2 player attributes: one row per version, valid from the snapshot that first
+    showed it until the one that replaced it. Rebuilt from every raw attribute snapshot.
+  columns:
+  - name: player_version_key
+    data_type: varchar
+    data_tests:
+    - not_null
+    - unique
+  - name: player_id
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_player')
+          field: player_id
+  - name: date_of_birth
+    data_type: date
+  - name: nationality
+    description: Override, else Wikidata country for sport, else Wikipedia infobox country, else latest T20I team, else citizenship.
+    data_type: varchar
+  - name: nationality_source
+    data_type: varchar
+    data_tests:
+    - accepted_values:
+        arguments:
+          values: [override, wikidata_sport_country, wikipedia_country, t20i_team, wikidata_citizenship]
+  - name: batting_hand
+    data_type: varchar
+    data_tests:
+    - accepted_values:
+        arguments:
+          values: [left, right]
+  - name: bowling_kind
+    data_type: varchar
+    data_tests:
+    - accepted_values:
+        arguments:
+          values: [pace, spin]
+  - name: bowling_arm
+    data_type: varchar
+    data_tests:
+    - accepted_values:
+        arguments:
+          values: [left, right]
+  - name: is_keeper
+    data_type: boolean
+    data_tests:
+    - not_null
+  - name: bowling_style_raw
+    description: DBpedia's bowling values as received, "|"-joined.
+    data_type: varchar
+  - name: wikipedia_fields
+    description: Fields filled from the Wikipedia infobox where Wikidata and DBpedia had none, "|"-joined.
+    data_type: varchar
+  - name: override_fields
+    description: Fields taken from the overrides CSV, "|"-joined; null when none.
+    data_type: varchar
+  - name: valid_from
+    data_type: timestamp
+    data_tests:
+    - not_null
+  - name: valid_to
+    description: Null for the current version.
+    data_type: timestamp
+  - name: is_current
+    data_type: boolean
+    data_tests:
+    - not_null
 - name: dim_team
   description: 'One row per team: IPL franchises (renames share an id) and national T20I sides.'
   columns:
