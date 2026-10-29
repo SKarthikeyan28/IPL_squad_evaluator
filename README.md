@@ -10,7 +10,7 @@ The ML is the use case. The product is the platform underneath it: immutable raw
 |---|---|---|
 | 1 | Ingestion, raw and staging layers, data quality, orchestration | Done |
 | 2 | dbt star schema and point-in-time player ratings | Done |
-| 3 | Squad features and win probability model | In progress: squad features built, models next |
+| 3 | Squad features and win probability model | In progress: squad and match features built, baselines and models next |
 | 4 | Player value, swap simulator and API | Planned |
 | 5 | Auction data, price model, optimiser and backtest | Planned |
 | 6 | Write-up and polish | Planned |
@@ -88,14 +88,17 @@ flowchart LR
     dim_venue["dim_venue"]
     fact_delivery["fact_delivery"]
     fact_team_match["fact_team_match"]
+    match_features["match_features"]
     player_ratings_asof["player_ratings_asof"]
     squad_features["squad_features"]
   end
   dim_player --> squad_features
   dim_player_history --> dim_player
+  dim_season --> match_features
   fact_delivery --> int_player_ratings_long
   fact_delivery --> int_rating_evidence
   fact_delivery --> int_rating_priors
+  fact_team_match --> match_features
   int_batting_positions --> int_expected_batting_position
   int_expected_batting_position --> int_squad_xi
   int_match_home_status --> fact_team_match
@@ -134,6 +137,7 @@ flowchart LR
   silver_wickets --> stg_silver__wickets
   silver_registers_player_attributes --> stg_silver__player_attributes
   silver_registers_players --> stg_silver__players
+  squad_features --> match_features
   stg_silver__deliveries --> fact_delivery
   stg_silver__deliveries --> int_batting_positions
   stg_silver__innings --> fact_delivery
