@@ -23,6 +23,7 @@
 19. [Point-in-time player ratings](#19-point-in-time-player-ratings)
 20. [Tuning the ratings: decay and T20I weight](#20-tuning-the-ratings-decay-and-t20i-weight)
 21. [Player attributes: SPARQL, overrides and SCD Type 2](#21-player-attributes-sparql-overrides-and-scd-type-2)
+22. [Pace/spin batting ratings and a feature that barely helped](#22-pacespin-batting-ratings-and-a-feature-that-barely-helped)
 
 ---
 
@@ -842,3 +843,35 @@ Type 2 is what lets a fact be joined to the version that was true at the time.
 - *"Why not just scrape Cricinfo?"* It blocks automated access and the brief says to respect each site's terms. These three sources are open and documented for machine use, so the pipeline is polite and legal by design.
 - *"How did you decide a dual-style bowler is pace or spin?"* The first-listed style in the infobox, unless the text says "occasional". It is a judgement, recorded in the row's note. If it matters for the model, derive the primary style from the balls the player actually bowled.
 - *"What if Wikidata is down?"* The fetch fails loudly, and silver is rebuilt from the snapshots already stored, so builds never depend on the network.
+
+---
+
+## 22. Pace/spin batting ratings and a feature that barely helped
+
+Code: `dbt/macros/ratings.sql`, `dbt/models/intermediate/ratings/` (the `vs` column), `cricket_value/ratings/split_eval.py`, `tests/warehouse/test_ratings.py`. Command: `make split-eval`, which writes `reports/pacespin_split.md`.
+
+**The idea:** batters differ against pace and spin, and the squad features need "how good is this XI against a spin attack?". So each batting series (runs and dismissals, per phase) gets a copy restricted to balls faced against pace or against spin bowlers. The series gain one dimension, `vs ∈ {all, pace, spin}`, and everything downstream (cumulative sums, priors, shrinkage) carries it.
+
+**A modelling subtlety: the split costs data.** A batter faces far fewer balls of spin than of everything, so a split rating is noisier even after shrinkage. A split is only worth having if it predicts the next ball better. So the question was answered by measurement, not assumed.
+
+**How it is measured:** the same next-ball log-likelihood used to tune the half-life (§20). Both scores use the *same* bowler rating and scoring rule; the only difference is the batter's rating, against all bowlers or against this bowler's kind. A paired bootstrap over matches gives an interval for the difference. This is **ablation**: change one thing, hold the rest fixed.
+
+**What went wrong, in order (worth telling as a story):**
+1. **The planned prior was bad.** I planned to shrink a split rating toward the role's average against that kind of bowler. It scored *worse* than the unsplit rating. The reason: a batter's rating against spin is mostly *his overall skill* plus a small deviation. Shrinking toward the role average throws away what his other balls tell us. The fix is **hierarchical shrinkage**: shrink the split rating toward his own overall rating (scaled by how the role scores against that bowler type).
+2. **A coverage bug hid behind a good-looking number.** My first result was "the split helps, −0.22, significant". But 10% of balls were silently dropped for a missing rating. Spin at the death is so rare that fewer than 20 batters ever had 60 balls of it, so that series never estimated a prior and had no ratings in any year. When I added a rule for sparse series to borrow the unsplit prior strength, the dropped balls went to 0% and the result became **−0.11, not significant**. The earlier number came from a non-random 90% of the balls.
+3. **The lesson:** always report how many rows each comparison dropped, and re-run the comparison after fixing coverage.
+
+**The honest conclusion:**
+- Overall, the split is **not distinguishable from no split** (−0.11, interval [−0.29, +0.07]).
+- Against **pace** it helps (−0.50, [−0.72, −0.28]).
+- Against **spin** it hurts (+0.57, [+0.18, +0.96]).
+
+I kept the columns, because Phase 3 may use them, but the write-up must not claim pace/spin ratings improve predictions in general. This kind of mixed or null result is normal. Saying so plainly, with the interval, is the point of the exercise.
+
+**Where pandas is used:** the evaluation (`split_eval.py`) uses pandas for the per-ball scoring and the bootstrap, and the tests use it to rewrite the fixture's attributes. The ratings themselves are SQL.
+
+**Likely follow-up questions**
+- *"Why does the split hurt against spin?"* I don't know yet. Fewer balls per batter is the obvious suspect, and it is testable: look at whether the loss is concentrated in batters with few spin balls.
+- *"Why own-rating shrinkage instead of the role average?"* A hierarchy: a batter's skill against spin is a *deviation from his overall skill*, so his overall rating is the right centre. The role average is the right centre only when we know nothing about him.
+- *"Isn't picking the prior strength on the seasons you score overfitting?"* A little, and the report says so. The strengths from ×1 to ×8 are within noise, so the choice barely matters. A stricter version tunes on earlier seasons and scores on later ones.
+- *"How do you know the split balls partition the unsplit ones?"* A test: with every bowler labelled, balls against pace plus balls against spin equal the balls faced, for every batter, date, phase and stat.
