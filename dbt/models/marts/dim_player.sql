@@ -1,8 +1,8 @@
 -- One row per person who appears in a match. Names come from the Cricsheet register;
 -- a player missing from it (the register can lag a newly published match) falls back
 -- to the most recent name on a scorecard and is flagged in_register = false, so the
--- gap is visible instead of breaking the build. Attributes (batting hand, bowling
--- style, role) arrive with the attribute pipeline as SCD Type 2 rows.
+-- gap is visible instead of breaking the build. Attribute columns are the player's
+-- current version from dim_player_history (SCD Type 2), null when no source has them.
 with appearances as (
     select
         mp.player_id,
@@ -25,6 +25,14 @@ select
     a.first_match_date::date as first_match_date,
     a.last_match_date::date as last_match_date,
     a.ipl_matches::integer as ipl_matches,
-    a.t20i_matches::integer as t20i_matches
+    a.t20i_matches::integer as t20i_matches,
+    h.date_of_birth::date as date_of_birth,
+    h.nationality::varchar as nationality,
+    h.nationality_source::varchar as nationality_source,
+    h.batting_hand::varchar as batting_hand,
+    h.bowling_kind::varchar as bowling_kind,
+    h.bowling_arm::varchar as bowling_arm,
+    coalesce(h.is_keeper, false)::boolean as is_keeper
 from appearances a
 left join {{ ref('stg_silver__players') }} p using (player_id)
+left join {{ ref('dim_player_history') }} h on h.player_id = a.player_id and h.is_current

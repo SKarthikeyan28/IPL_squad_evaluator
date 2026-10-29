@@ -156,15 +156,32 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
 
 ## 6. Player attributes
 
-- **Pre-fill sources:** Wikidata and DBpedia, which are open endpoints, so no scraping is needed. They are linked through Cricsheet register `key_cricinfo` → Wikidata ESPNcricinfo ID → DBpedia. *(The Wikidata property ID still has to be verified.)*
-  - **Batting hand and bowling style:** from DBpedia `battingSide` and `bowlingSide`. Bowling style is mapped to `{pace, spin} × {left, right arm}` with a tested lookup table.
+- **Pre-fill sources:** Wikidata and DBpedia, which are open endpoints, so no scraping is needed. They are linked through Cricsheet register `key_cricinfo` → Wikidata **P2697** ("Cricinfo player ID", verified 2026-10-29) → the English Wikipedia article → the DBpedia resource of the same title.
+  - **Batting hand and bowling style:** from DBpedia's infobox properties `dbp:batting` and `dbp:bowling` (the ontology's `battingSide`/`bowlingSide` strip spaces: "Right-armfast"). Bowling style is mapped to `{pace, spin} × {left, right arm}` with a tested lookup table.
   - **Date of birth:** from Wikidata.
   - **Nationality:** from Wikidata "country for sport", with the T20I team as a fallback.
 - **Cricinfo:** not scraped. It blocks automated access, which conflicts with the terms rule in the brief.
 - **Role:** derived **from the match data** (share of balls bowled versus faced, and keeping records), not from text sources.
 - **Overseas status:** derived from nationality using that season's rules.
 - **Overrides:** a version-controlled CSV fills gaps and corrects errors. Every value records `source`, `retrieved_at` and `hand_checked`.
-- **History:** changes over time are stored as SCD Type 2 rows in `dim_player`.
+- **History:** changes over time are stored as SCD Type 2 rows in `dim_player_history`. `dim_player` keeps one row per person (facts join to it by `player_id`) and carries the current version's attributes.
+- **Built (2026-10-29, `make attributes`, `make attributes-audit`):**
+  - **Raw:** one canonical JSON snapshot per source per fetch, recorded in the manifest like any download. Rows are de-duplicated and sorted before hashing, because SPARQL endpoints return them in no fixed order. A refetch that gets the same answers stores nothing; verified on real data.
+  - **Who is fetched:** every player in a silver match with a `key_cricinfo`: 5,165 asked about, 2,409 found on Wikidata (most associate-nation players aren't on it).
+  - **Third source, Wikipedia's infobox (MediaWiki API):** DBpedia is an occasional extraction of Wikipedia and never extracted some pages (Harbhajan, Shakib, Morkel, Yusuf Pathan). So the top section of an article is fetched, 50 titles per request, but only where Wikidata and DBpedia left a gap: no DBpedia batting or bowling, not exactly one date of birth, or no country. That is 866 pages in 18 requests, stored as a third raw snapshot. Wikipedia fills only fields still empty, `wikipedia_fields` records which, and its infobox country is its own link in the nationality chain. Only the infobox is read, never the article text.
+  - **Silver `player_attributes`:** one row per player per snapshot time, combining the latest Wikidata and the latest DBpedia answer at that time. It's built from *every* stored snapshot, so the history can be rebuilt from raw.
+  - **Conflicts become null, not a guess:** two dates of birth on Wikidata (Gilchrist), a style naming both pace and spin, or several countries for sport.
+  - **Bowling style mapping** (`cricket_value/attributes/styles.py`): normalise, then keywords. Where no arm is given, cricket's naming implies one: leg spin and off spin are right-arm, and orthodox is left-arm. "Slow" isn't a spin word ("medium-slow", "slow seam"). It's tested on 22 real DBpedia spellings, and 98.7% of the styles fetched map fully; the rest are genuinely mixed ("Right-arm medium \| Right-arm off break").
+  - **Keepers:** a DBpedia role containing "wicket" ("Wicket-keeper", "Wicket-keeper-batter"). This replaces the keeping-records idea, because Cricsheet doesn't mark the keeper.
+  - **Nationality chain:** override → Wikidata country for sport → Wikipedia infobox country → latest T20I team → Wikidata citizenship (single value only). For in-scope players: 661 from Wikidata, 44 from Wikipedia, 483 from the T20I team, 222 from citizenship, 24 from overrides, 43 with none. Citizenship can say "United Kingdom" where cricket says "England"; this doesn't affect Indian vs overseas.
+  - **Overrides** (`config/reference/player_attribute_overrides.csv`): one row per field, with `source`, `retrieved_at`, `hand_checked` and a note. A dbt test rejects unknown fields, unknown players and invalid values (the 15-match fixture build switches the unknown-player check off, since it holds 2 of the file's players). The file has 53 rows for 30 players: Dhoni, and the top of the audit's hand-check queue.
+  - **SCD2 in dbt, not a dbt snapshot:** versions come from changes between stored snapshots (`valid_from` is the snapshot that first showed a version). A dbt snapshot keeps history as warehouse state, which a rebuild would lose. A test checks that each player has exactly one current version and that versions meet without gaps or overlaps.
+  - **Coverage, in-scope players, by balls (reports/player_attributes.md):** date of birth 99.7%, nationality 99.7%, batting hand 99.8% of balls faced, bowling kind 99.4% and arm 99.4% of balls bowled. Before Wikipedia and the overrides these were 99.2%, 98.7%, 95.1%, 94.7% and 94.8%. Spin is about a third of balls bowled and left-handers face about 30%.
+  - **The hand-check queue** ranks players by the balls behind their gaps, counting a bowling style only for players who bowled. Its largest remaining gap is 570 balls (DS Rathi), down from 4,295. What is left is players no verified page describes: DS Rathi, V Nigam, Brijesh Sharma, Shivang Kumar, K Santokie, Yash Raj Punja and a few others.
+  - **How overrides were checked:** each value was read from the player's Wikipedia lead sentence or infobox. A page is trusted only if it links the player's own ESPNcricinfo ID, so a lookalike name can't be picked, and list pages are excluded (one matched "Ashok Sharma" only because it contains hundreds of IDs). A date of birth is filled only where infobox and lead agree; Priyansh Arya's infobox says 18 September 2001 and his lead 18 January 2001, so his is left empty.
+  - **Dual-style bowlers:** where the infobox lists two styles (Symonds, Nicol: medium and off break; Yardy: orthodox and medium) the first-listed is taken as primary, and a style marked "occasional" is ignored (Elliott). This is a judgement, noted on each row. If it matters in Phase 3, the primary style can be derived from the balls actually bowled.
+  - **Parser bug found and fixed:** an empty infobox field (`| batting =`) swallowed the next line, so `| bowling = Right-arm fast` could be read as a batting value. It had mislabeled two batting hands and hidden 9 dates of birth, 3 keepers and about 225 countries. It now has a regression test.
+  - **Limitation:** the sources give current values only, so history starts at the first fetch (2026-10-29). Historical matches use the current version, which is safe for bowling style and hand but not for a player who changed country.
 
 ## 7. Point-in-time ratings
 
@@ -186,14 +203,14 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
     - **Batting:** runs and dismissals, over balls faced (wides excluded).
     - **Bowling:** runs conceded (×6 gives economy), wickets credited to the bowler, and dot balls, over legal balls. Runs and wickets off wides and no-balls still count against the bowler.
   - **Evidence:** IPL balls weigh 1 and Full Member T20I balls weigh `rating_t20i_weight`. Super overs are excluded.
-  - **Parameters:** half-life 1,095 days and T20I weight 0.5, both tuned (see **Tuning** below). Both are dbt vars in `dbt/dbt_project.yml`. The numbers in this section's sanity checks and in interview_prep §19 were measured at the earlier placeholder of 730 days.
+  - **Parameters:** half-life 1,095 days and T20I weight 0.5, both tuned (see **Tuning** below). Both are dbt vars in `dbt/dbt_project.yml`. The sanity checks below were re-measured at these values (2026-10-29).
   - **Role:** derived as of each date from the decayed share of balls bowled among balls faced plus bowled.
     - Below 0.2 is a batter, above 0.7 a bowler, and anything between an all-rounder.
     - Under 60 decayed balls is `unknown`.
     - Keepers wait for the week-2 attribute pipeline.
     - On real data, Kohli, Suryakumar and Dhoni come out as batters; Bumrah, Rashid, Narine and Ashwin as bowlers; the Pandyas, Jadeja, Axar and Russell as all-rounders.
   - **Priors are point in time too.** Each calendar year's priors use only evidence from before 1 January of that year.
-    - **Prior mean:** the role's pooled rate over all its players. Tail-enders' batting gets its own mean: 1.21 runs per ball at the death, against 1.77 for batters.
+    - **Prior mean:** the role's pooled rate over all its players. Tail-enders' batting gets its own mean: 1.21 runs per ball at the death, against 1.76 for batters.
     - **Prior strength `k`:** from players with at least 60 decayed balls in the phase. A role with fewer than 20 such players borrows the pooled `k`.
     - **Missing years:** a year that can't estimate `k` carries the latest earlier year's forward.
   - **Noise uses squared weights.** The sampling variance of a weighted rate is `ball_var · Σw²/(Σw)²`, not `ball_var/Σw`. Using `1/Σw` overstated the noise and pushed every dismissal prior to the cap.
@@ -203,8 +220,9 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
     - `test_no_rating_uses_a_match_on_or_after_its_date` rebuilds the warehouse with every ball from 2023-03-31 onwards changed. Every rating dated on or before that day must be identical.
     - The dbt test `ratings_use_only_earlier_matches` checks source dates for both ratings and priors.
   - **Sanity checks (2026, latest rating per player):**
-    - **Top of each list:** death economy, Bumrah and Narine; powerplay dot balls, Bhuvneshwar, Hazlewood and Boult; powerplay scoring, Suryavanshi, Abhishek Sharma and Head; lowest middle-overs dismissal rate, Klaasen, Iyer, Rahul, Gill and Kohli.
-    - **Small samples:** players under 30 balls make up 75–100% of the extremes of raw rates, but only about their base rate (0–50%) of the extremes of ratings.
+    - **Top of each list:** death economy, Narine and Bumrah; powerplay dot balls, Bhuvneshwar, Boult and Hazlewood; powerplay scoring, Suryavanshi, Priyansh Arya and Abhishek Sharma; lowest middle-overs dismissal rate, Klaasen, Kohli, Iyer, Rahul and Gill.
+    - **Prior strength (pooled, 2026):** runs per ball 82–168 balls, dot rate 160–303, dismissal rate 226–719. Wicket rate stays at the 5,000-ball cap in every phase.
+    - **Small samples:** players under 30 balls make up 75–100% of the extremes of raw rates, but only 4–54% of the extremes of ratings, about their base rate or below.
 - **Tuning:** the decay rate and T20I weight are tuned on **next-ball log-likelihood** (dismissal and runs outcomes) over the development IPL seasons. They are not tuned on the win model.
 - **Tuned (`make tune-ratings` → `reports/ratings_tuning.md`, 2026-10-28):** code in `cricket_value/ratings/tuning.py`.
   - **Scored balls:** 226,193 balls faced in IPL 2010–2024, with no super overs and no wides. 2008–2009 are burn-in. **2025–2026 are locked:** the loader refuses those seasons.

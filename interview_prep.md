@@ -22,6 +22,7 @@
 18. [Kinds of data warehouse, and where DuckDB fits](#18-kinds-of-data-warehouse-and-where-duckdb-fits)
 19. [Point-in-time player ratings](#19-point-in-time-player-ratings)
 20. [Tuning the ratings: decay and T20I weight](#20-tuning-the-ratings-decay-and-t20i-weight)
+21. [Player attributes: SPARQL, overrides and SCD Type 2](#21-player-attributes-sparql-overrides-and-scd-type-2)
 
 ---
 
@@ -712,13 +713,13 @@ Code: `dbt/models/intermediate/ratings/`, `dbt/macros/ratings.sql`, `dbt/models/
 - The noise is known from the binomial or normal model, so `true spread = observed spread − noise`.
 - `k` = noise per ball ÷ true spread: how many balls of a player's own data it takes to count as much as the prior.
 
-**A bug worth telling:** with decayed weights, a rate's sampling variance is `ball_var · Σw²/(Σw)²`. That's the "effective sample size" correction, `n_eff = (Σw)²/Σw²`. Using the naive `ball_var/Σw` overstated the noise, so the true spread came out at or below zero, and every dismissal prior hit the 5,000-ball cap. Tracking `Σw²` (decayed at `2λ`) fixed it: dismissal priors are now worth about 450–1,300 balls.
+**A bug worth telling:** with decayed weights, a rate's sampling variance is `ball_var · Σw²/(Σw)²`. That's the "effective sample size" correction, `n_eff = (Σw)²/Σw²`. Using the naive `ball_var/Σw` overstated the noise, so the true spread came out at or below zero, and every dismissal prior hit the 5,000-ball cap. Tracking `Σw²` (decayed at `2λ`) fixed it: dismissal priors are now worth about 230–720 balls at the tuned 1,095-day half-life.
 
 **Findings:**
 - **Wicket rate is mostly noise.** Bowlers' per-ball wicket rates barely differ beyond chance, so their `k` often reaches the cap. Economy and dot rate carry the bowling signal. This matches the common analytics view that wickets in T20 are high-variance.
-- **Role priors matter for tailenders.** Bowlers batting at the death average 1.21 runs per ball, against 1.77 for batters. Shrinking a 10-ball tailender toward the overall average would rate them as a decent batter.
+- **Role priors matter for tailenders.** Bowlers batting at the death average 1.21 runs per ball, against 1.76 for batters. Shrinking a 10-ball tailender toward the overall average would rate them as a decent batter.
 - **Burn-in:** priors need history, so ratings start in 2009–2010. IPL 2008–2009 are evidence only, and the win model starts at 2010.
-- **Sanity check:** players under 30 balls make up 75–100% of the extremes of raw rates, but only about their base rate of the extremes of ratings. The top of each list is the players a fan would name: Bumrah and Narine for death economy, Boult and Bhuvneshwar for powerplay dot balls.
+- **Sanity check:** players under 30 balls make up 75–100% of the extremes of raw rates, but only 4–54% of the extremes of ratings, about their base rate or below. The top of each list is the players a fan would name: Bumrah and Narine for death economy, Boult and Bhuvneshwar for powerplay dot balls.
 
 **Where pandas is used:** only in the tests, to rewrite silver Parquet for the perturbation test and to compare the two builds with `pd.testing.assert_frame_equal`. The ratings themselves are pure SQL.
 
@@ -787,3 +788,57 @@ Both were guesses (730 days and 0.5) until this step.
 - *"Why grid search and not an optimiser?"* There are two parameters, each run is a 3-second dbt rebuild, and a grid shows the whole surface: how flat it is, and where it breaks. A gradient method would give one number and hide that.
 - *"Isn't tuning on 2010–2024 and then using the ratings for the win model on the same seasons leakage?"* The two parameters are global, and they're chosen by a different target (next ball, not match result). Strictly, a rolling tune (only seasons before each test season) would be cleaner, like Elo's. Given how flat the surface is, the choice would barely move. That's a reasonable follow-up if the win model's gains are marginal.
 - *"Why is the bowler measured against the average bowler, not the average batter?"* The two stats aren't the same event: run outs count against the batter but not the bowler, and bowlers are charged wides and no-balls. Comparing each rating with its own mean keeps the adjustment unbiased.
+
+---
+
+## 21. Player attributes: SPARQL, overrides and SCD Type 2
+
+Code: `cricket_value/attributes/` (`fetch.py`, `styles.py`, `silver.py`, `audit.py`), `dbt/models/intermediate/int_player_attributes.sql`, `dbt/models/marts/dim_player_history.sql`, `config/reference/player_attribute_overrides.csv`. Commands: `make attributes`, `make attributes-audit`.
+
+**Why these attributes:** Phase 3 needs "number of spin and pace options" and left/right-hand balance, and Phase 5 needs nationality for overseas limits. None of that is in the ball-by-ball data.
+
+**Why Wikidata and DBpedia, not scraping Cricinfo:** Cricinfo blocks automated access, and the brief requires respecting each site's terms. Wikidata and DBpedia are open SPARQL endpoints made for machine access, and Wikipedia has a documented API. The link between them is an ID, not a name match:
+- Cricsheet's register has each player's ESPNcricinfo ID;
+- Wikidata stores the same ID as property P2697;
+- that leads to the Wikipedia article, and DBpedia's resource has the same title.
+
+Joining on IDs avoids the classic name-matching bugs ("MS Dhoni" vs "Mahendra Singh Dhoni").
+
+**SPARQL in one breath:** a query language for graph data. A query is a pattern of (subject, predicate, object) triples, such as `?item wdt:P2697 "253802"` ("the item whose Cricinfo ID is 253802"), and the endpoint returns every match. `OPTIONAL` is a left join. Batching 400 IDs per query keeps it to about 13 requests.
+
+**Making an API idempotent: canonical snapshots.** Endpoints return rows in any order, so two identical answers could hash differently and look like a change. Sorting and de-duplicating rows before hashing makes "same answers" mean "same bytes". A refetch then stores nothing, the same rule as the Cricsheet downloader.
+
+**A third source for the gaps only.** DBpedia is an occasional extraction of Wikipedia, so some famous pages (Harbhajan, Morkel) have no infobox data. Wikipedia's own API returns the top section of 50 pages per request, so one query round covers the 866 pages with a gap. Asking only about gaps keeps requests few, and Wikipedia fills only fields still empty, with the filled fields recorded, so provenance stays visible. Redirects and renamed pages are followed and mapped back to the title that was requested.
+
+**Mapping messy text:** DBpedia copies Wikipedia infoboxes, so one style has many spellings ("Right-arm off break", "Right arm offbreak", a link to "Off_spin"). The mapper normalises the text, then reads keywords. It's tested on real spellings, and anything ambiguous becomes null rather than a guess. Domain knowledge fills gaps safely: leg spin is right-arm by definition, because the left-arm version has its own name.
+
+**The overrides workflow (the human in the loop):** automatic sources have gaps (DBpedia never extracted Harbhajan Singh's infobox) and errors. A version-controlled CSV holds hand-checked corrections, one field per row, each with a source URL, date and `hand_checked` flag.
+- It's in git, so every correction is reviewable and attributable.
+- A dbt test rejects typos (an unknown field, player or value) instead of silently ignoring them.
+- The audit report ranks gaps by the balls behind them, so checking effort goes where it matters.
+
+**SCD Type 2 (slowly changing dimension):** keep every version of a dimension row, with `valid_from` and `valid_to`, instead of overwriting it.
+- **Type 1:** overwrite, so the history is lost.
+- **Type 2:** add a row per change, so history is kept.
+- **Type 3:** keep a "previous value" column, so only one step of history.
+
+Type 2 is what lets a fact be joined to the version that was true at the time.
+
+**Why not dbt's built-in `snapshot`:** a dbt snapshot records history by comparing the source with the warehouse each time it runs. The history then lives *only in the warehouse*: delete it and rebuild, and it's gone. Here, every raw snapshot is kept, so `dim_player_history` is recomputed from raw files on every build. That keeps the project's rule that everything is rebuildable from raw. The cost is storing raw snapshots, which only happens when answers change.
+
+**A bug worth telling.** My infobox regex let `\s*` after `=` match a newline, so an empty field (`| batting =`) captured the *next line* as its value. The mapper turned `| bowling = Right-arm fast` into a batting hand of "right", which was a silent wrong value, not an error. I only saw it because one player's `role` came back as `| club1 = Uttar Pradesh`. The lesson: parsers need a test for the empty case, and a sample of the *output* should be read, not just the success count. Now it has one, and fixing it changed 19 batting hands, 9 dates of birth and about 225 countries.
+
+**Verifying a hand-check against the source.** For players with no Wikidata link, a Wikipedia search can return a lookalike. A page is trusted only if its text contains the player's own ESPNcricinfo ID, which is unambiguous. This also exposed a false positive: a *list* page matched because it contains hundreds of IDs, so list pages are excluded.
+
+**Limitations to say first:**
+- The sources give *current* values, so history starts at the first fetch. A player who changed country (Corey Anderson, New Zealand to the USA) would carry their current country back in time.
+- Bowling style and batting hand almost never change, so for them the current version is safe for past matches.
+
+**Where pandas is used:** silver parsing (`silver.py`) and the audit's coverage and queue (`audit.py`). The mapping and versioning logic is in plain Python and dbt SQL.
+
+**Likely follow-up questions**
+- *"Why is the SCD2 table separate from `dim_player`?"* Facts join to `dim_player` by `player_id`, which must stay unique. History is a separate table keyed by `player_version_key`, and `dim_player` shows the current version.
+- *"How do you know the mapping is right?"* It's tested on real spellings; 98.7% of fetched styles map fully; the audit lists every gap; and ambiguity becomes null and is queued for a hand check.
+- *"Why not just scrape Cricinfo?"* It blocks automated access and the brief says to respect each site's terms. These three sources are open and documented for machine use, so the pipeline is polite and legal by design.
+- *"How did you decide a dual-style bowler is pace or spin?"* The first-listed style in the infobox, unless the text says "occasional". It is a judgement, recorded in the row's note. If it matters for the model, derive the primary style from the balls the player actually bowled.
+- *"What if Wikidata is down?"* The fetch fails loudly, and silver is rebuilt from the snapshots already stored, so builds never depend on the network.

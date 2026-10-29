@@ -351,6 +351,9 @@ def competitions_from_config(sources_path: Path) -> dict[str, str]:
 
 
 def main() -> None:
+    # imported here: cricket_value.attributes.silver itself imports this module
+    from cricket_value.attributes.silver import ATTRIBUTES, build_player_attributes
+
     repo = Path(__file__).resolve().parents[2]
     raw_dir = repo / "data" / "raw"
     out_dir = repo / "data" / "silver"
@@ -358,6 +361,7 @@ def main() -> None:
     competitions = competitions_from_config(repo / "config" / "sources.toml")
     result = build_silver(raw_dir, manifest, out_dir, competitions)
     result.row_counts.update(build_registers(raw_dir, manifest, out_dir))
+    result.row_counts[ATTRIBUTES] = build_player_attributes(raw_dir, manifest, out_dir)
     for table, n in result.row_counts.items():
         print(f"{table:<20} {n:>10,} rows")
     print(f"{'parse failures':<20} {len(result.failures):>10,}")

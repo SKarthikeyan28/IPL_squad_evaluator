@@ -6,8 +6,9 @@
    stops the rebuild: derived data is only as trustworthy as the raw layer.
 2. Deletes all derived data (``data/silver``, ``data/models``), so nothing from an
    earlier build can survive.
-3. Rebuilds silver (all seasons) and the registers, then the data quality report, the
-   reference audit and the Elo baseline: the same functions Dagster runs.
+3. Rebuilds silver (all seasons), the registers and the player attributes, then the data
+   quality report, the reference audit and the Elo baseline: the same functions Dagster
+   runs.
 4. Fingerprints every output (rows, columns, content hash) and compares them with the
    fingerprints stored for the same raw snapshot in ``data/build/fingerprints/``.
    The first build of a snapshot stores its fingerprints; later builds must match them
@@ -29,6 +30,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from cricket_value.attributes.silver import ATTRIBUTES, build_player_attributes
 from cricket_value.build.fingerprint import Fingerprint, compare, fingerprint_path
 from cricket_value.ingest.download import verify_raw
 from cricket_value.ingest.manifest import Manifest
@@ -105,6 +107,7 @@ def rebuild(paths: RebuildPaths, *, include_models: bool = True) -> RebuildResul
     competitions = competitions_from_config(paths.config / "sources.toml")
     build_silver(paths.raw, manifest, paths.silver, competitions)
     build_registers(paths.raw, manifest, paths.silver)
+    build_player_attributes(paths.raw, manifest, paths.silver)
 
     snapshot = manifest.snapshot_id()
     paths.reports.mkdir(parents=True, exist_ok=True)
@@ -128,7 +131,7 @@ def rebuild(paths: RebuildPaths, *, include_models: bool = True) -> RebuildResul
 
 def outputs(paths: RebuildPaths) -> dict[str, Path]:
     """Every derived output that must be reproducible, by a stable name."""
-    out = {f"silver/{t}": paths.silver / t for t in [*SILVER_TABLES, *REGISTERS]}
+    out = {f"silver/{t}": paths.silver / t for t in [*SILVER_TABLES, *REGISTERS, ATTRIBUTES]}
     for d in (INDEX_DIR, INDEX_FAILURES_DIR, PARSE_FAILURES_DIR, VIOLATIONS_DIR):
         out[f"silver/{d}"] = paths.silver / d
     out |= {
