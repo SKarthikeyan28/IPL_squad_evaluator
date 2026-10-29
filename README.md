@@ -9,8 +9,8 @@ The ML is the use case. The product is the platform underneath it: immutable raw
 | Phase | What | State |
 |---|---|---|
 | 1 | Ingestion, raw and staging layers, data quality, orchestration | Done |
-| 2 | dbt star schema and point-in-time player ratings | Built; tuning the rating parameters |
-| 3 | Squad features and win probability model | Next |
+| 2 | dbt star schema and point-in-time player ratings | Done |
+| 3 | Squad features and win probability model | Next, after player attributes |
 | 4 | Player value, swap simulator and API | Planned |
 | 5 | Auction data, price model, optimiser and backtest | Planned |
 | 6 | Write-up and polish | Planned |

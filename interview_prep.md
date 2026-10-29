@@ -712,13 +712,13 @@ Code: `dbt/models/intermediate/ratings/`, `dbt/macros/ratings.sql`, `dbt/models/
 - The noise is known from the binomial or normal model, so `true spread = observed spread − noise`.
 - `k` = noise per ball ÷ true spread: how many balls of a player's own data it takes to count as much as the prior.
 
-**A bug worth telling:** with decayed weights, a rate's sampling variance is `ball_var · Σw²/(Σw)²`. That's the "effective sample size" correction, `n_eff = (Σw)²/Σw²`. Using the naive `ball_var/Σw` overstated the noise, so the true spread came out at or below zero, and every dismissal prior hit the 5,000-ball cap. Tracking `Σw²` (decayed at `2λ`) fixed it: dismissal priors are now worth about 450–1,300 balls.
+**A bug worth telling:** with decayed weights, a rate's sampling variance is `ball_var · Σw²/(Σw)²`. That's the "effective sample size" correction, `n_eff = (Σw)²/Σw²`. Using the naive `ball_var/Σw` overstated the noise, so the true spread came out at or below zero, and every dismissal prior hit the 5,000-ball cap. Tracking `Σw²` (decayed at `2λ`) fixed it: dismissal priors are now worth about 230–720 balls at the tuned 1,095-day half-life.
 
 **Findings:**
 - **Wicket rate is mostly noise.** Bowlers' per-ball wicket rates barely differ beyond chance, so their `k` often reaches the cap. Economy and dot rate carry the bowling signal. This matches the common analytics view that wickets in T20 are high-variance.
-- **Role priors matter for tailenders.** Bowlers batting at the death average 1.21 runs per ball, against 1.77 for batters. Shrinking a 10-ball tailender toward the overall average would rate them as a decent batter.
+- **Role priors matter for tailenders.** Bowlers batting at the death average 1.21 runs per ball, against 1.76 for batters. Shrinking a 10-ball tailender toward the overall average would rate them as a decent batter.
 - **Burn-in:** priors need history, so ratings start in 2009–2010. IPL 2008–2009 are evidence only, and the win model starts at 2010.
-- **Sanity check:** players under 30 balls make up 75–100% of the extremes of raw rates, but only about their base rate of the extremes of ratings. The top of each list is the players a fan would name: Bumrah and Narine for death economy, Boult and Bhuvneshwar for powerplay dot balls.
+- **Sanity check:** players under 30 balls make up 75–100% of the extremes of raw rates, but only 4–54% of the extremes of ratings, about their base rate or below. The top of each list is the players a fan would name: Bumrah and Narine for death economy, Boult and Bhuvneshwar for powerplay dot balls.
 
 **Where pandas is used:** only in the tests, to rewrite silver Parquet for the perturbation test and to compare the two builds with `pd.testing.assert_frame_equal`. The ratings themselves are pure SQL.
 

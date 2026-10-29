@@ -186,14 +186,14 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
     - **Batting:** runs and dismissals, over balls faced (wides excluded).
     - **Bowling:** runs conceded (×6 gives economy), wickets credited to the bowler, and dot balls, over legal balls. Runs and wickets off wides and no-balls still count against the bowler.
   - **Evidence:** IPL balls weigh 1 and Full Member T20I balls weigh `rating_t20i_weight`. Super overs are excluded.
-  - **Parameters:** half-life 1,095 days and T20I weight 0.5, both tuned (see **Tuning** below). Both are dbt vars in `dbt/dbt_project.yml`. The numbers in this section's sanity checks and in interview_prep §19 were measured at the earlier placeholder of 730 days.
+  - **Parameters:** half-life 1,095 days and T20I weight 0.5, both tuned (see **Tuning** below). Both are dbt vars in `dbt/dbt_project.yml`. The sanity checks below were re-measured at these values (2026-10-29).
   - **Role:** derived as of each date from the decayed share of balls bowled among balls faced plus bowled.
     - Below 0.2 is a batter, above 0.7 a bowler, and anything between an all-rounder.
     - Under 60 decayed balls is `unknown`.
     - Keepers wait for the week-2 attribute pipeline.
     - On real data, Kohli, Suryakumar and Dhoni come out as batters; Bumrah, Rashid, Narine and Ashwin as bowlers; the Pandyas, Jadeja, Axar and Russell as all-rounders.
   - **Priors are point in time too.** Each calendar year's priors use only evidence from before 1 January of that year.
-    - **Prior mean:** the role's pooled rate over all its players. Tail-enders' batting gets its own mean: 1.21 runs per ball at the death, against 1.77 for batters.
+    - **Prior mean:** the role's pooled rate over all its players. Tail-enders' batting gets its own mean: 1.21 runs per ball at the death, against 1.76 for batters.
     - **Prior strength `k`:** from players with at least 60 decayed balls in the phase. A role with fewer than 20 such players borrows the pooled `k`.
     - **Missing years:** a year that can't estimate `k` carries the latest earlier year's forward.
   - **Noise uses squared weights.** The sampling variance of a weighted rate is `ball_var · Σw²/(Σw)²`, not `ball_var/Σw`. Using `1/Σw` overstated the noise and pushed every dismissal prior to the cap.
@@ -203,8 +203,9 @@ All reference facts live in `config/reference/` as version-controlled CSVs. Ever
     - `test_no_rating_uses_a_match_on_or_after_its_date` rebuilds the warehouse with every ball from 2023-03-31 onwards changed. Every rating dated on or before that day must be identical.
     - The dbt test `ratings_use_only_earlier_matches` checks source dates for both ratings and priors.
   - **Sanity checks (2026, latest rating per player):**
-    - **Top of each list:** death economy, Bumrah and Narine; powerplay dot balls, Bhuvneshwar, Hazlewood and Boult; powerplay scoring, Suryavanshi, Abhishek Sharma and Head; lowest middle-overs dismissal rate, Klaasen, Iyer, Rahul, Gill and Kohli.
-    - **Small samples:** players under 30 balls make up 75–100% of the extremes of raw rates, but only about their base rate (0–50%) of the extremes of ratings.
+    - **Top of each list:** death economy, Narine and Bumrah; powerplay dot balls, Bhuvneshwar, Boult and Hazlewood; powerplay scoring, Suryavanshi, Priyansh Arya and Abhishek Sharma; lowest middle-overs dismissal rate, Klaasen, Kohli, Iyer, Rahul and Gill.
+    - **Prior strength (pooled, 2026):** runs per ball 82–168 balls, dot rate 160–303, dismissal rate 226–719. Wicket rate stays at the 5,000-ball cap in every phase.
+    - **Small samples:** players under 30 balls make up 75–100% of the extremes of raw rates, but only 4–54% of the extremes of ratings, about their base rate or below.
 - **Tuning:** the decay rate and T20I weight are tuned on **next-ball log-likelihood** (dismissal and runs outcomes) over the development IPL seasons. They are not tuned on the win model.
 - **Tuned (`make tune-ratings` → `reports/ratings_tuning.md`, 2026-10-28):** code in `cricket_value/ratings/tuning.py`.
   - **Scored balls:** 226,193 balls faced in IPL 2010–2024, with no super overs and no wides. 2008–2009 are burn-in. **2025–2026 are locked:** the loader refuses those seasons.
